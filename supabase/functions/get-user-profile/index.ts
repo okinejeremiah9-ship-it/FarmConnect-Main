@@ -1,0 +1,109 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+};
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders,
+    });
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+
+    const url = new URL(req.url);
+    const userId = url.searchParams.get('id');
+
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+
+    const { data: user, error: userError } = await supabaseClient
+      .from('users')
+      .select(`
+        id,
+        name,
+        full_name,
+        phone,
+        role,
+        bio,
+        profile_pic,
+        farm_size,
+        services_offered,
+        latitude,
+        longitude,
+        address,
+        rating,
+        total_reviews,
+        is_verified,
+        created_at
+      `)
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userError || !user) {
+      throw new Error('User not found');
+    }
+
+    let services = [];
+    if (user.role === 'provider') {
+      const { data: servicesData } = await supabaseClient
+        .from('services')
+        .select('*')
+        .eq('provider_id', userId);
+
+      services = servicesData || [];
+    }
+
+    const { data: reviews } = await supabaseClient
+      .from('reviews')
+      .select(`
+        id,
+        rating,
+        comment,
+        created_at,
+        reviewer:reviewer_id(id, name, full_name),
+        booking:booking_id(id)
+      `)
+      .eq('reviewee_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        user,
+        services: services || [],
+        reviews: reviews || [],
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      }
+    );
+  } catch (error) {
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      }
+    );
+  }
+});
