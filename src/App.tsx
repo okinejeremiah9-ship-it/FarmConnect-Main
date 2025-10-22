@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { LoginForm } from './components/auth/LoginForm';
 import { SignupForm } from './components/auth/SignupForm';
+import DriverTrackingPage from './components/tracking/DriverTrackingPage';
+import LiveTrackingView from './components/tracking/LiveTrackingView';
 import { SignupSuccessSplash } from './components/auth/SignupSuccessSplash';
 import { WelcomeScreen } from './components/auth/WelcomeScreen';
 import { AdminSignupPage } from './components/auth/AdminSignupPage';
@@ -114,16 +116,40 @@ const App: React.FC = () => {
   }
 
   // Show authenticated app if user is logged in
-  if (user && user.is_verified) {
-    return (
-      <Router>
-        <Routes>
-          <Route path="/admin-signup" element={<AdminSignupPage />} />
-          <Route path="/*" element={<MainApp user={user} onLogout={handleLogout} onUserUpdate={handleUserUpdate} />} />
-        </Routes>
-      </Router>
-    );
-  }
+if (user && user.is_verified) {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/admin-signup" element={<AdminSignupPage />} />
+
+        {/* ✅ Main dashboard area */}
+        <Route
+          path="/*"
+          element={
+            <MainApp
+              user={user}
+              onLogout={handleLogout}
+              onUserUpdate={handleUserUpdate}
+            />
+          }
+        />
+
+        {/* ✅ Driver Tracking Page (GPS-enabled) */}
+        <Route
+          path="/driver-tracking/:sessionId"
+          element={<DriverTrackingPage sessionId={""} />}
+        />
+
+        {/* ✅ Live Tracking Map (for viewing driver’s movement) */}
+        <Route
+          path="/live-tracking/:bookingId"
+          element={<LiveTrackingView />}
+        />
+      </Routes>
+    </Router>
+  );
+}
+
 
   // Show welcome splash if user just verified
   if (authStep === 'welcome' && pendingUser) {

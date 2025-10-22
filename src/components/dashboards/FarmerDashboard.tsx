@@ -21,7 +21,12 @@ import {
   X
 } from 'lucide-react';
 
-export const FarmerDashboard: React.FC = () => {
+interface FarmerDashboardProps {
+  onNavigate: (view: string, providerId?: string, sessionId?: string) => void;
+}
+
+export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) => {
+
   const { user } = useAuth();
   const { stats, loading: statsLoading, refreshStats } = useUserStats(user?.id);
   const [activeRequests, setActiveRequests] = useState<ServiceRequest[]>([]);

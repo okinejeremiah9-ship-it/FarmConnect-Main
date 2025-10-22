@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
-export function useRealtimeMessages(bookingId: string, userId: string) {
+/**
+ * ✅ Realtime Chat Subscription
+ * Works even if bookingId is optional.
+ * Listens for both sender and receiver updates in real time.
+ */
+export function useRealtimeMessages(bookingId: string | null, userId: string) {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -10,36 +15,53 @@ export function useRealtimeMessages(bookingId: string, userId: string) {
     let channel: RealtimeChannel;
 
     async function setupSubscription() {
-      const { data: initialMessages } = await supabase
+      if (!userId) return;
+
+      // ✅ Fetch initial chat history
+      const { data: initialMessages, error } = await supabase
         .from('messages')
-        .select('*, sender:sender_id(id, name, profile_pic), receiver:receiver_id(id, name, profile_pic)')
-        .eq('booking_id', bookingId)
+        .select(`
+          *,
+          sender:sender_id(id, name, profile_pic),
+          receiver:receiver_id(id, name, profile_pic)
+        `)
         .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
         .order('created_at', { ascending: true });
 
+      if (error) console.error('Error fetching messages:', error);
       setMessages(initialMessages || []);
       setLoading(false);
 
+      // ✅ Subscribe to any new inserts (for both sides)
       channel = supabase
-        .channel(`messages:${bookingId}`)
+        .channel(`realtime:messages:${userId}`)
         .on(
           'postgres_changes',
           {
             event: 'INSERT',
             schema: 'public',
             table: 'messages',
-            filter: `booking_id=eq.${bookingId}`,
           },
           (payload) => {
-            setMessages((prev) => [...prev, payload.new]);
+            const newMsg = payload.new;
+            // Show only relevant messages
+            if (
+              newMsg.sender_id === userId ||
+              newMsg.receiver_id === userId ||
+              (bookingId && newMsg.booking_id === bookingId)
+            ) {
+              setMessages((prev) => [...prev, newMsg]);
+            }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Realtime chat connected');
+          }
+        });
     }
 
-    if (bookingId && userId) {
-      setupSubscription();
-    }
+    setupSubscription();
 
     return () => {
       if (channel) {
@@ -51,6 +73,9 @@ export function useRealtimeMessages(bookingId: string, userId: string) {
   return { messages, loading };
 }
 
+/**
+ * ✅ Realtime Escrow Status Watcher
+ */
 export function useRealtimeEscrowStatus(escrowId: string) {
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,20 +110,19 @@ export function useRealtimeEscrowStatus(escrowId: string) {
         .subscribe();
     }
 
-    if (escrowId) {
-      setupSubscription();
-    }
+    if (escrowId) setupSubscription();
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      if (channel) supabase.removeChannel(channel);
     };
   }, [escrowId]);
 
   return { status, loading };
 }
 
+/**
+ * ✅ Realtime Booking Updates
+ */
 export function useRealtimeBookingUpdates(userId: string) {
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,11 +144,7 @@ export function useRealtimeBookingUpdates(userId: string) {
         .channel(`bookings:${userId}`)
         .on(
           'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'bookings',
-          },
+          { event: '*', schema: 'public', table: 'bookings' },
           async (payload) => {
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const booking = payload.new;
@@ -147,14 +167,10 @@ export function useRealtimeBookingUpdates(userId: string) {
         .subscribe();
     }
 
-    if (userId) {
-      setupSubscription();
-    }
+    if (userId) setupSubscription();
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      if (channel) supabase.removeChannel(channel);
     };
   }, [userId]);
 

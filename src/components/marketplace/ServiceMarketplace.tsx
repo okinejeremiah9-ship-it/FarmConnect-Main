@@ -3,11 +3,17 @@ import { ServiceListing, ServiceFilters } from '../../types/marketplace';
 import { ServiceCard } from './ServiceCard';
 import { ServiceFiltersComponent } from './ServiceFilters';
 import { ServiceDetailsModal } from './ServiceDetailsModal';
-import { BookingModal } from './BookingModal';
+import { BookingModal } from '../bookings/BookingModal';
 import { ChatModal } from './ChatModal';
 import { Search, MapPin, Filter } from 'lucide-react';
 
-export const ServiceMarketplace: React.FC = () => {
+interface ServiceMarketplaceProps {
+  onNavigate: (view: string, providerId?: string, sessionId?: string) => void;
+}
+
+
+
+export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigateTo }) => {
   const [services, setServices] = useState<ServiceListing[]>([]);
   const [filteredServices, setFilteredServices] = useState<ServiceListing[]>([]);
   const [filters, setFilters] = useState<ServiceFilters>({});
@@ -41,6 +47,7 @@ export const ServiceMarketplace: React.FC = () => {
         images: ['https://images.pexels.com/photos/2132250/pexels-photo-2132250.jpeg'],
         createdAt: '2025-01-01T00:00:00Z',
         updatedAt: '2025-01-10T00:00:00Z',
+        gps_enabled: true, // ✅ Added property to show "Track this booking"
       },
       {
         id: 'service-2',
@@ -60,6 +67,7 @@ export const ServiceMarketplace: React.FC = () => {
         specializations: ['Tractor repair', 'Pump maintenance', 'Irrigation systems'],
         createdAt: '2025-01-02T00:00:00Z',
         updatedAt: '2025-01-09T00:00:00Z',
+        gps_enabled: false,
       },
       {
         id: 'service-3',
@@ -79,44 +87,7 @@ export const ServiceMarketplace: React.FC = () => {
         specializations: ['Soil testing', 'Crop planning', 'Pest management', 'Organic farming'],
         createdAt: '2025-01-03T00:00:00Z',
         updatedAt: '2025-01-08T00:00:00Z',
-      },
-      {
-        id: 'service-4',
-        providerId: '550e8400-e29b-41d4-a716-446655440004',
-        providerName: 'Northern Labour Cooperative',
-        providerRating: 4.4,
-        category: 'labour',
-        title: 'Seasonal Farm Workers',
-        description: 'Experienced farm workers available for planting, weeding, harvesting, and general farm maintenance. Teams of 5-20 workers.',
-        price: 25,
-        priceUnit: 'hour',
-        location: 'Bolgatanga, Upper East',
-        district: 'Bolgatanga',
-        coordinates: { lat: 10.7856, lng: -0.8514 },
-        availability: 'available',
-        availableDates: ['2025-01-21', '2025-01-22', '2025-01-23'],
-        specializations: ['Planting', 'Weeding', 'Harvesting', 'Land clearing'],
-        createdAt: '2025-01-04T00:00:00Z',
-        updatedAt: '2025-01-07T00:00:00Z',
-      },
-      {
-        id: 'service-5',
-        providerId: '550e8400-e29b-41d4-a716-446655440005',
-        providerName: 'Harvest Masters',
-        providerRating: 4.7,
-        category: 'machinery',
-        title: 'Combine Harvester Service',
-        description: 'Modern combine harvester for efficient grain harvesting. Suitable for maize, rice, and other cereals.',
-        price: 300,
-        priceUnit: 'day',
-        location: 'Sunyani, Brong Ahafo',
-        district: 'Sunyani',
-        coordinates: { lat: 7.3392, lng: -2.3265 },
-        availability: 'busy',
-        availableDates: ['2025-01-25', '2025-01-26'],
-        equipment: ['Case IH Axial-Flow', 'Grain cart', 'Header attachments'],
-        createdAt: '2025-01-05T00:00:00Z',
-        updatedAt: '2025-01-06T00:00:00Z',
+        gps_enabled: false,
       },
     ];
 
@@ -128,41 +99,37 @@ export const ServiceMarketplace: React.FC = () => {
   useEffect(() => {
     let filtered = [...services];
 
-    // Apply category filter
     if (filters.category && filters.category !== 'all') {
       filtered = filtered.filter(service => service.category === filters.category);
     }
 
-    // Apply location filter
     if (filters.district) {
-      filtered = filtered.filter(service => 
+      filtered = filtered.filter(service =>
         service.district.toLowerCase().includes(filters.district!.toLowerCase())
       );
     }
 
-    // Apply availability filter
     if (filters.availability && filters.availability !== 'all') {
       if (filters.availability === 'available') {
         filtered = filtered.filter(service => service.availability === 'available');
       } else if (filters.availability === 'today') {
         const today = new Date().toISOString().split('T')[0];
-        filtered = filtered.filter(service => 
-          service.availability === 'available' && 
+        filtered = filtered.filter(service =>
+          service.availability === 'available' &&
           service.availableDates.includes(today)
         );
       }
     }
 
-    // Apply search filter
     if (searchQuery) {
       filtered = filtered.filter(service =>
         service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         service.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         service.providerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (service.equipment && service.equipment.some(eq => 
+        (service.equipment && service.equipment.some(eq =>
           eq.toLowerCase().includes(searchQuery.toLowerCase())
         )) ||
-        (service.specializations && service.specializations.some(spec => 
+        (service.specializations && service.specializations.some(spec =>
           spec.toLowerCase().includes(searchQuery.toLowerCase())
         ))
       );
@@ -238,9 +205,9 @@ export const ServiceMarketplace: React.FC = () => {
         </div>
       </div>
 
+      {/* Services Grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
-          {/* Filters Sidebar */}
           <div className={`lg:w-80 ${showFilters ? 'block' : 'hidden lg:block'}`}>
             <ServiceFiltersComponent
               filters={filters}
@@ -248,19 +215,11 @@ export const ServiceMarketplace: React.FC = () => {
             />
           </div>
 
-          {/* Services Grid */}
           <div className="flex-1">
             <div className="flex justify-between items-center mb-6">
               <p className="text-gray-600">
                 {filteredServices.length} service{filteredServices.length !== 1 ? 's' : ''} found
               </p>
-              <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option>Sort by: Relevance</option>
-                <option>Price: Low to High</option>
-                <option>Price: High to Low</option>
-                <option>Rating: High to Low</option>
-                <option>Distance: Nearest</option>
-              </select>
             </div>
 
             {filteredServices.length === 0 ? (
@@ -302,16 +261,15 @@ export const ServiceMarketplace: React.FC = () => {
         />
       )}
 
-      {showBookingModal && selectedService && (
-        <BookingModal
-          service={selectedService}
-          onClose={() => setShowBookingModal(false)}
-          onBookingComplete={() => {
-            setShowBookingModal(false);
-            // Handle booking completion
-          }}
-        />
-      )}
+  {showBookingModal && selectedService && (
+  <BookingModal
+    service={selectedService}
+    onClose={() => setShowBookingModal(false)}
+    onBookingComplete={() => setShowBookingModal(false)}
+    onNavigate={onNavigate} // ✅ passes navigation function down
+  />
+)}
+
 
       {showChatModal && selectedService && (
         <ChatModal

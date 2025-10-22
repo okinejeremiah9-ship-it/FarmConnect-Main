@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
-import { User, MapPin, Camera, Save, X, Plus, Trash2 } from 'lucide-react';
+// Location: src/components/profile/FarmerProfileForm.tsx
+// Purpose: Permanent completion profile form for farmers
+
+import React, { useState } from "react";
+import { User, MapPin, Save, X, Plus } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 
 interface FarmerProfileFormProps {
   user: any;
@@ -17,22 +21,23 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
   isFirstTime = false,
 }) => {
   const [formData, setFormData] = useState({
-    name: user.name || '',
-    email: user.email || '',
-    phone: user.phone || '',
-    profile_pic: user.profile_pic || '',
-    address: user.address || '',
-    latitude: user.latitude || '',
-    longitude: user.longitude || '',
-    farm_size: user.farm_size || '',
+    name: user.name || "",
+    email: user.email || "",
+    phone: user.phone || "",
+    profile_pic: user.profile_pic || "",
+    address: user.address || "",
+    latitude: user.latitude || "",
+    longitude: user.longitude || "",
+    farm_size: user.farm_size || "",
     crop_types: user.crop_types || [],
-    num_workers: user.num_workers || '',
+    num_workers: user.num_workers || "",
   });
 
-  const [newCrop, setNewCrop] = useState('');
+  const [newCrop, setNewCrop] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
@@ -40,64 +45,93 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
 
   const addCrop = () => {
     if (newCrop.trim()) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         crop_types: [...prev.crop_types, newCrop.trim()],
       }));
-      setNewCrop('');
+      setNewCrop("");
     }
   };
 
   const removeCrop = (index: number) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      crop_types: prev.crop_types.filter((_, i) => i !== index),
+      crop_types: prev.crop_types.filter((_: any, i: number) => i !== index),
     }));
   };
 
+  // 🔹 Get GPS Coordinates
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setFormData(prev => ({
+          const { latitude, longitude } = position.coords;
+          setFormData((prev) => ({
             ...prev,
-            latitude: position.coords.latitude.toString(),
-            longitude: position.coords.longitude.toString(),
+            latitude: latitude.toString(),
+            longitude: longitude.toString(),
           }));
+          alert("📍 Location captured successfully!");
         },
         (error) => {
-          console.error('Error getting location:', error);
-          alert('Unable to get your location. Please enter it manually.');
-        }
+          console.error("GPS Error:", error);
+          alert("Unable to get your location. Please enable GPS.");
+        },
+        { enableHighAccuracy: true }
       );
     } else {
-      alert('Geolocation is not supported by this browser.');
+      alert("Geolocation not supported by this browser.");
     }
   };
 
+  // 🔹 Submit Handler (Save + Mark as Completed)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
 
     const updateData = {
       ...formData,
       latitude: formData.latitude ? parseFloat(formData.latitude) : null,
       longitude: formData.longitude ? parseFloat(formData.longitude) : null,
-      num_workers: formData.num_workers ? parseInt(formData.num_workers as string) : null,
+      num_workers: formData.num_workers
+        ? parseInt(formData.num_workers as string)
+        : null,
       profile_completed: true,
+      updated_at: new Date().toISOString(),
     };
 
-    await onSave(updateData);
+    try {
+      // ✅ Update Supabase profile record
+      const { error } = await supabase
+        .from("profiles")
+        .update(updateData)
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      // ✅ Update local app user data
+      await onSave(updateData);
+
+      alert("✅ Profile saved successfully!");
+    } catch (err) {
+      console.error("Profile update error:", err);
+      alert("Failed to save profile. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6 max-h-[90vh] overflow-y-auto">
+    <div className="bg-white rounded-xl shadow-md p-6 max-h-[90vh] overflow-y-auto border border-green-100">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
-            {isFirstTime ? 'Complete Your Farmer Profile' : 'Edit Profile'}
+            {isFirstTime ? "Complete Your Farmer Profile" : "Edit Farmer Profile"}
           </h2>
           <p className="text-gray-600 mt-1">
-            {isFirstTime ? 'Please provide your details to get started' : 'Update your profile information'}
+            {isFirstTime
+              ? "Please complete your details to get started."
+              : "You can update your farm information below."}
           </p>
         </div>
         {onCancel && !isFirstTime && (
@@ -114,7 +148,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
         {/* Profile Picture */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Profile Picture
+            Profile Picture URL
           </label>
           <div className="flex items-center space-x-4">
             <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center">
@@ -128,74 +162,70 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
                 <User className="w-10 h-10 text-gray-400" />
               )}
             </div>
-            <div className="flex-1">
-              <input
-                type="url"
-                value={formData.profile_pic}
-                onChange={(e) => handleInputChange('profile_pic', e.target.value)}
-                placeholder="Enter image URL"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              <p className="text-xs text-gray-500 mt-1">Enter a URL to your profile picture</p>
-            </div>
+            <input
+              type="url"
+              value={formData.profile_pic}
+              onChange={(e) =>
+                handleInputChange("profile_pic", e.target.value)
+              }
+              placeholder="https://example.com/photo.jpg"
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+            />
           </div>
         </div>
 
-        {/* Basic Info */}
+        {/* Name & Phone */}
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Full Name <span className="text-red-500">*</span>
+              Full Name *
             </label>
             <input
               type="text"
               value={formData.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              onChange={(e) => handleInputChange("name", e.target.value)}
               required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Phone Number
+              Phone
             </label>
             <input
               type="tel"
               value={formData.phone}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
               disabled
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
             />
-            <p className="text-xs text-gray-500 mt-1">Auto-filled from signup</p>
           </div>
         </div>
 
         {/* Email */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Email (Optional)
+            Email (optional)
           </label>
           <input
             type="email"
             value={formData.email}
-            onChange={(e) => handleInputChange('email', e.target.value)}
-            placeholder="your.email@example.com"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            onChange={(e) => handleInputChange("email", e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
           />
         </div>
 
-        {/* Farm Location */}
+        {/* Address */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Farm Location / Address <span className="text-red-500">*</span>
+            Farm Address *
           </label>
           <input
             type="text"
             value={formData.address}
-            onChange={(e) => handleInputChange('address', e.target.value)}
-            placeholder="Enter your farm location or address"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            onChange={(e) => handleInputChange("address", e.target.value)}
             required
+            placeholder="Enter your farm location or address"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
           />
         </div>
 
@@ -206,12 +236,10 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
               Latitude
             </label>
             <input
-              type="number"
-              step="any"
+              type="text"
               value={formData.latitude}
-              onChange={(e) => handleInputChange('latitude', e.target.value)}
-              placeholder="0.0000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
             />
           </div>
           <div>
@@ -219,12 +247,10 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
               Longitude
             </label>
             <input
-              type="number"
-              step="any"
+              type="text"
               value={formData.longitude}
-              onChange={(e) => handleInputChange('longitude', e.target.value)}
-              placeholder="0.0000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              readOnly
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
             />
           </div>
           <div className="flex items-end">
@@ -242,22 +268,22 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
         {/* Farm Size */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Farm Size <span className="text-red-500">*</span>
+            Farm Size *
           </label>
           <input
             type="text"
             value={formData.farm_size}
-            onChange={(e) => handleInputChange('farm_size', e.target.value)}
-            placeholder="e.g., 5 acres, 2 hectares"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            onChange={(e) => handleInputChange("farm_size", e.target.value)}
             required
+            placeholder="e.g., 5 acres, 2 hectares"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
           />
         </div>
 
         {/* Crop Types */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Crop Types <span className="text-red-500">*</span>
+            Crop Types *
           </label>
           <div className="space-y-2">
             <div className="flex space-x-2">
@@ -265,22 +291,21 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
                 type="text"
                 value={newCrop}
                 onChange={(e) => setNewCrop(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCrop())}
-                placeholder="Add a crop type (e.g., Maize, Rice, Cocoa)"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                onKeyPress={(e) =>
+                  e.key === "Enter" && (e.preventDefault(), addCrop())
+                }
+                placeholder="Add crop type (e.g., Maize, Rice)"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
               />
               <button
                 type="button"
                 onClick={addCrop}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center"
               >
-                <Plus className="w-4 h-4 mr-1" />
-                Add
+                <Plus className="w-4 h-4 mr-1" /> Add
               </button>
             </div>
-            {formData.crop_types.length === 0 && (
-              <p className="text-sm text-red-500">Please add at least one crop type</p>
-            )}
+
             <div className="flex flex-wrap gap-2">
               {formData.crop_types.map((crop, index) => (
                 <span
@@ -301,50 +326,16 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
           </div>
         </div>
 
-        {/* Number of Workers */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Number of Workers (Optional)
-          </label>
-          <input
-            type="number"
-            min="0"
-            value={formData.num_workers}
-            onChange={(e) => handleInputChange('num_workers', e.target.value)}
-            placeholder="0"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          />
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex space-x-3 pt-4">
-          {onCancel && !isFirstTime && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300"
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={saving || formData.crop_types.length === 0}
-            className={`${onCancel && !isFirstTime ? 'flex-1' : 'w-full'} bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center`}
-          >
-            {saving ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="w-5 h-5 mr-2" />
-                {isFirstTime ? 'Complete Profile' : 'Save Changes'}
-              </>
-            )}
-          </button>
-        </div>
+        {/* Submit */}
+        <button
+          type="submit"
+          disabled={saving || loading || formData.crop_types.length === 0}
+          className={`w-full py-3 rounded-lg font-semibold text-white transition ${
+            loading ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"
+          }`}
+        >
+          {loading ? "Saving..." : "Save Profile"}
+        </button>
       </form>
     </div>
   );

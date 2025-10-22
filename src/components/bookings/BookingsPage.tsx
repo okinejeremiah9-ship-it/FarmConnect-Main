@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeBookingUpdates } from '../../hooks/useRealtimeSubscription';
 import { bookingAPI, escrowAPI } from '../../lib/api';
-import { Clock, CheckCircle, XCircle, AlertTriangle, MessageCircle, DollarSign } from 'lucide-react';
+import { TrackingAPI } from '../../lib/api/trackingAPI'; // ✅ Correct import
+import { 
+  Clock, CheckCircle, XCircle, AlertTriangle, 
+  MessageCircle, DollarSign 
+} from 'lucide-react';
 import { EscrowStatusBadge } from '../escrow/EscrowStatusBadge';
 import { ChatWindow } from '../chat/ChatWindow';
 import { DisputeModal } from '../escrow/DisputeModal';
@@ -10,7 +14,7 @@ import { DisputeModal } from '../escrow/DisputeModal';
 interface BookingsPageProps {
   userId: string;
   userRole: string;
-  onNavigate: (view: string, id?: string) => void;
+  onNavigate: (view: string, id?: string, sessionId?: string) => void;
 }
 
 export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, onNavigate }) => {
@@ -62,10 +66,58 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
     }
   };
 
-  const filteredBookings = bookings.filter((booking: any) => {
-    if (filter === 'all') return true;
-    return booking.status === filter;
-  });
+  /** ✅ Create new tracking session for provider (start tracking) */
+  const handleStartTracking = async (booking: any) => {
+    try {
+      setUpdating(booking.id);
+
+      const session = await TrackingAPI.createSession(
+        booking.id,
+        userId,
+        'Driver',
+        booking.provider?.phone || ''
+      );
+
+      if (!session?.id) throw new Error('Tracking session could not be created.');
+
+      // Optional: Save session ID into bookings table
+      await supabase
+        .from('bookings')
+        .update({ tracking_session_id: session.id })
+        .eq('id', booking.id);
+
+      // Store temporarily for navigation continuity
+      sessionStorage.setItem('pending_tracking_session', session.id);
+      sessionStorage.setItem('pending_tracking_type', 'driver');
+
+      onNavigate('driver-tracking', undefined, session.id);
+    } catch (error: any) {
+      console.error('Failed to start tracking:', error);
+      alert(error.message || 'Unable to start tracking session.');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  /** ✅ View ongoing tracking session (for farmers/admins) */
+  const handleViewTracking = async (booking: any) => {
+    try {
+      if (!booking.tracking_session_id) {
+        alert('Tracking has not started yet.');
+        return;
+      }
+
+      sessionStorage.setItem('pending_tracking_session', booking.tracking_session_id);
+      sessionStorage.setItem('pending_tracking_type', 'live');
+
+      onNavigate('live-tracking', undefined, booking.tracking_session_id);
+    } catch (error) {
+      console.error('Failed to open tracking:', error);
+      alert('Unable to open live tracking view.');
+    }
+  };
+
+  const filteredBookings = bookings.filter((b: any) => filter === 'all' || b.status === filter);
 
   if (loading) {
     return (
@@ -97,7 +149,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
         ))}
       </div>
 
-      {/* Bookings List */}
+      {/* Bookings */}
       {filteredBookings.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-12 text-center">
           <AlertTriangle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -140,7 +192,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
                     </p>
                   </div>
 
-                  {/* Escrow Status */}
+                  {/* Escrow */}
                   {booking.escrow_wallet?.[0] && (
                     <div className="mt-3">
                       <EscrowStatusBadge
@@ -152,174 +204,29 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  {/* Status Badge */}
-                  <span
-                    className={`px-4 py-2 rounded-lg text-sm font-medium text-center ${
-                      booking.status === 'completed'
-                        ? 'bg-green-100 text-green-800'
-                        : booking.status === 'in-progress'
-                        ? 'bg-blue-100 text-blue-800'
-                        : booking.status === 'pending'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : booking.status === 'accepted'
-                        ? 'bg-cyan-100 text-cyan-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}
-                  >
-                    {booking.status}
-                  </span>
-
-                  {/* Action Buttons */}
-                  <div className="flex flex-col gap-2">
-                    {/* Farmer Actions */}
-                    {userRole === 'farmer' && (
-                      <>
-                        {booking.status === 'accepted' && !booking.escrow_wallet?.[0] && (
-                          <button
-                            onClick={() => handleEscrowDeposit(booking)}
-                            disabled={updating === booking.id}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
-                          >
-                            <DollarSign className="h-4 w-4" />
-                            Pay Escrow
-                          </button>
-                        )}
-                        {booking.status === 'completed' && booking.escrow_wallet?.[0]?.status === 'funded' && (
-                          <button
-                            onClick={() => handleEscrowRelease(booking.escrow_wallet[0].id)}
-                            disabled={updating === booking.escrow_wallet[0].id}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-                          >
-                            Release Payment
-                          </button>
-                        )}
-                      </>
-                    )}
-
-                    {/* Provider Actions */}
-                    {userRole === 'provider' && (
-                      <>
-                        {booking.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => handleStatusUpdate(booking.id, 'accepted')}
-                              disabled={updating === booking.id}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              onClick={() => handleStatusUpdate(booking.id, 'declined')}
-                              disabled={updating === booking.id}
-                              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:opacity-50"
-                            >
-                              Decline
-                            </button>
-                          </>
-                        )}
-                        {booking.status === 'accepted' && booking.escrow_wallet?.[0]?.status === 'funded' && (
-                          <button
-                            onClick={() => handleStatusUpdate(booking.id, 'in-progress')}
-                            disabled={updating === booking.id}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
-                          >
-                            Start Service
-                          </button>
-                        )}
-                        {booking.status === 'in-progress' && (
-                          <button
-                            onClick={() => handleStatusUpdate(booking.id, 'completed')}
-                            disabled={updating === booking.id}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
-                          >
-                            Mark Complete
-                          </button>
-                        )}
-                      </>
-                    )}
-
-                    {/* Chat Button */}
+                  {/* Tracking Actions */}
+                  {userRole === 'provider' && booking.status === 'in-progress' && (
                     <button
-                      onClick={() => setSelectedBookingForChat(booking)}
-                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center justify-center gap-2"
+                      onClick={() => handleStartTracking(booking)}
+                      disabled={updating === booking.id}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
                     >
-                      <MessageCircle className="h-4 w-4" />
-                      Chat
+                      Start Tracking
                     </button>
-
-                    {/* Dispute Button */}
-                    {booking.escrow_wallet?.[0] && booking.escrow_wallet[0].status === 'funded' && (
-                      <button
-                        onClick={() => setSelectedBookingForDispute(booking)}
-                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition flex items-center justify-center gap-2"
-                      >
-                        <AlertTriangle className="h-4 w-4" />
-                        Dispute
-                      </button>
-                    )}
-                  </div>
+                  )}
+                  {userRole === 'farmer' && booking.tracking_session_id && (
+                    <button
+                      onClick={() => handleViewTracking(booking)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    >
+                      View Tracking
+                    </button>
+                  )}
                 </div>
               </div>
-
-              {booking.notes && (
-                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-700">
-                    <span className="font-medium">Notes:</span> {booking.notes}
-                  </p>
-                </div>
-              )}
             </div>
           ))}
         </div>
-      )}
-
-      {/* Chat Modal */}
-      {selectedBookingForChat && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full h-[600px] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-xl font-semibold">
-                Chat - {selectedBookingForChat.service?.title}
-              </h2>
-              <button
-                onClick={() => setSelectedBookingForChat(null)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <XCircle className="h-6 w-6" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <ChatWindow
-                bookingId={selectedBookingForChat.id}
-                userId={userId}
-                otherUserId={
-                  userRole === 'farmer'
-                    ? selectedBookingForChat.provider_id
-                    : selectedBookingForChat.farmer_id
-                }
-                otherUserName={
-                  userRole === 'farmer'
-                    ? selectedBookingForChat.provider?.name || 'Provider'
-                    : selectedBookingForChat.farmer?.name || 'Farmer'
-                }
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dispute Modal */}
-      {selectedBookingForDispute && selectedBookingForDispute.escrow_wallet?.[0] && (
-        <DisputeModal
-          escrowId={selectedBookingForDispute.escrow_wallet[0].id}
-          userId={userId}
-          bookingId={selectedBookingForDispute.id}
-          onClose={() => setSelectedBookingForDispute(null)}
-          onSuccess={() => {
-            setSelectedBookingForDispute(null);
-            alert('Dispute submitted successfully. An admin will review it.');
-          }}
-        />
       )}
     </div>
   );
