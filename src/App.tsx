@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { LoginForm } from './components/auth/LoginForm';
 import { SignupForm } from './components/auth/SignupForm';
+import { FarmerSignupForm } from './components/auth/FarmerSignupForm';
+import { ProviderSignupForm } from './components/auth/ProviderSignupForm';
+import { SignupRoleSelector } from './components/auth/SignupRoleSelector';
 import DriverTrackingPage from './components/tracking/DriverTrackingPage';
 import LiveTrackingView from './components/tracking/LiveTrackingView';
 import { SignupSuccessSplash } from './components/auth/SignupSuccessSplash';
@@ -25,7 +28,9 @@ import {
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<'login' | 'signup' | 'splash' | 'welcome'>('login');
+  const [authStep, setAuthStep] = useState<
+    'login' | 'choose-role' | 'signup-farmer' | 'signup-provider' | 'splash' | 'welcome'
+  >('login');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>('');
   const [showAuth, setShowAuth] = useState(false);
@@ -195,14 +200,29 @@ if (user && user.is_verified) {
             <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-green-100 flex items-center justify-center p-4">
               {authStep === 'login' && (
                 <LoginForm
-                  onSwitchToRegister={() => setAuthStep('signup')}
+                  onSwitchToRegister={() => setAuthStep('choose-role')}
                   onLoginSuccess={handleLoginSuccess}
                 />
               )}
-              {authStep === 'signup' && (
-                <SignupForm
+              {authStep === 'choose-role' && (
+                <SignupRoleSelector
+                  onSelectFarmer={() => setAuthStep('signup-farmer')}
+                  onSelectProvider={() => setAuthStep('signup-provider')}
+                  onSwitchToLogin={() => setAuthStep('login')}
+                />
+              )}
+              {authStep === 'signup-farmer' && (
+                <FarmerSignupForm
                   onSwitchToLogin={() => setAuthStep('login')}
                   onSignupSuccess={handleSignupSuccess}
+                  onSelectRole={() => setAuthStep('choose-role')}
+                />
+              )}
+              {authStep === 'signup-provider' && (
+                <ProviderSignupForm
+                  onSwitchToLogin={() => setAuthStep('login')}
+                  onSignupSuccess={handleSignupSuccess}
+                  onSelectRole={() => setAuthStep('choose-role')}
                 />
               )}
             </div>
@@ -238,8 +258,8 @@ if (user && user.is_verified) {
                     >
                       How It Works
                     </button>
-                    <button 
-                      onClick={() => { setShowAuth(true); setAuthStep('signup'); }}
+                    <button
+                      onClick={() => { setShowAuth(true); setAuthStep('choose-role'); }}
                       className="text-gray-600 hover:text-green-600 transition-colors"
                     >
                       Sign Up
@@ -276,7 +296,7 @@ if (user && user.is_verified) {
                         How It Works
                       </button>
                       <button 
-                        onClick={() => { setShowAuth(true); setAuthStep('signup'); }}
+                        onClick={() => { setShowAuth(true); setAuthStep('choose-role'); }}
                         className="block w-full text-left px-3 py-2 text-gray-600 hover:text-green-600"
                       >
                         Sign Up
@@ -307,15 +327,15 @@ if (user && user.is_verified) {
                   </p>
                   
                   <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                    <button 
-                      onClick={() => { setShowAuth(true); setAuthStep('signup'); }}
+                    <button
+                      onClick={() => { setShowAuth(true); setAuthStep('signup-farmer'); }}
                       className="bg-green-600 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-green-700 transform hover:scale-105 transition-all duration-200 shadow-lg flex items-center"
                     >
                       Sign Up as Farmer
                       <ArrowRight className="ml-2 h-5 w-5" />
                     </button>
-                    <button 
-                      onClick={() => { setShowAuth(true); setAuthStep('signup'); }}
+                    <button
+                      onClick={() => { setShowAuth(true); setAuthStep('signup-provider'); }}
                       className="bg-blue-600 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-blue-700 transform hover:scale-105 transition-all duration-200 shadow-lg flex items-center"
                     >
                       Sign Up as Provider
@@ -441,17 +461,17 @@ if (user && user.is_verified) {
                 </p>
                 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button 
-                    onClick={() => { setShowAuth(true); setAuthStep('signup'); }}
-                    className="bg-white text-green-600 px-8 py-4 rounded-lg font-semibold text-lg hover:bg-gray-50 transform hover:scale-105 transition-all duration-200 shadow-lg"
-                  >
-                    Get Started as Farmer
-                  </button>
-                  <button 
-                    onClick={() => { setShowAuth(true); setAuthStep('signup'); }}
-                    className="bg-transparent text-white border-2 border-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-white hover:text-green-600 transform hover:scale-105 transition-all duration-200"
-                  >
-                    Become a Provider
+                    <button
+                      onClick={() => { setShowAuth(true); setAuthStep('signup-farmer'); }}
+                      className="bg-white text-green-600 px-8 py-4 rounded-lg font-semibold text-lg hover:bg-gray-50 transform hover:scale-105 transition-all duration-200 shadow-lg"
+                    >
+                      Get Started as Farmer
+                    </button>
+                    <button
+                      onClick={() => { setShowAuth(true); setAuthStep('signup-provider'); }}
+                      className="bg-transparent text-white border-2 border-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-white hover:text-green-600 transform hover:scale-105 transition-all duration-200"
+                    >
+                      Become a Provider
                   </button>
                 </div>
               </div>
