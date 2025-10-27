@@ -37,6 +37,57 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function toNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isNaN(value) ? null : value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+}
+
+function toIntOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isNaN(value) ? null : Math.trunc(value);
+  }
+
+  if (typeof value === 'string') {
+    const parsed = parseInt(value, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  return null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : String(item)))
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  return [];
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -57,7 +108,19 @@ Deno.serve(async (req: Request) => {
       }
     );
 
-    const { name, phone, password, role, admin_invite_token } = await req.json();
+    const {
+      name,
+      phone,
+      password,
+      role,
+      admin_invite_token,
+      email,
+      address,
+      latitude,
+      longitude,
+      profile_completed,
+      ...roleSpecificFields
+    } = await req.json();
 
     if (!phone || !password || !role) {
       throw new Error('Missing required fields: phone, password, and role are required');
@@ -91,7 +154,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const normalizedPhone = normalizePhoneNumber(phone);
-    
+
     if (!normalizedPhone.match(/^\+233\d{9}$/)) {
       throw new Error('Invalid Ghana phone number format. Please use format: 0XXXXXXXXX or +233XXXXXXXXX');
     }
@@ -108,18 +171,62 @@ Deno.serve(async (req: Request) => {
 
     const hashedPassword = await hashPassword(password);
 
+    const latitudeValue = toNumberOrNull(latitude);
+    const longitudeValue = toNumberOrNull(longitude);
+
+    const insertData: Record<string, any> = {
+      name: name || 'User',
+      phone: normalizedPhone,
+      email: email ?? null,
+      role,
+      password_hash: hashedPassword,
+      is_verified: true,
+      rating: 0.0,
+      total_reviews: 0,
+      address: address ?? null,
+      latitude: latitudeValue,
+      longitude: longitudeValue,
+    };
+
+    if (typeof profile_completed === 'boolean') {
+      insertData.profile_completed = profile_completed;
+    } else if (role !== 'admin') {
+      insertData.profile_completed = false;
+    }
+
+    if (role === 'farmer') {
+      const cropTypes = toStringArray(roleSpecificFields.crop_types);
+      const numWorkers = toIntOrNull(roleSpecificFields.num_workers);
+
+      if (!roleSpecificFields.farm_size || cropTypes.length === 0) {
+        throw new Error('Farmer registration requires farm size and crop types');
+      }
+
+      insertData.farm_size = roleSpecificFields.farm_size;
+      insertData.crop_types = cropTypes.length > 0 ? cropTypes : null;
+      insertData.num_workers = numWorkers;
+    }
+
+    if (role === 'provider') {
+      const serviceCategories = toStringArray(roleSpecificFields.service_categories);
+      const yearsExperience = toIntOrNull(roleSpecificFields.years_experience);
+
+      if (!roleSpecificFields.business_name || serviceCategories.length === 0 || !roleSpecificFields.service_description) {
+        throw new Error('Provider registration requires business details and service information');
+      }
+
+      insertData.name = roleSpecificFields.contact_person || name || 'User';
+      insertData.business_name = roleSpecificFields.business_name;
+      insertData.contact_person = roleSpecificFields.contact_person || name || null;
+      insertData.service_categories = serviceCategories.length > 0 ? serviceCategories : null;
+      insertData.service_description = roleSpecificFields.service_description;
+      insertData.pricing_info = roleSpecificFields.pricing_info ?? null;
+      insertData.years_experience = yearsExperience;
+    }
+
     const { data: user, error: userError } = await supabaseClient
       .from('users')
-      .insert({
-        name: name || 'User',
-        phone: normalizedPhone,
-        email: null,
-        role,
-        password_hash: hashedPassword,
-        is_verified: true,
-        rating: 0.00,
-        total_reviews: 0,
-      })
+      .insert(insertData)
       .select('id, name, phone, role, is_verified, created_at')
       .maybeSingle();
 
