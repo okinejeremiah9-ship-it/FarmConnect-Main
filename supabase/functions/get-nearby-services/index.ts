@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
     const lng = parseFloat(url.searchParams.get('lng') || '0');
     const radius = parseFloat(url.searchParams.get('radius') || '50');
     const category = url.searchParams.get('category');
-    const availability = url.searchParams.get('availability');
+    const minRating = parseFloat(url.searchParams.get('min_rating') || '0');
 
     if (!lat || !lng) {
       throw new Error('Latitude and longitude are required');
@@ -56,14 +56,22 @@ Deno.serve(async (req: Request) => {
         id,
         name,
         full_name,
+        business_name,
+        contact_person,
         profile_pic,
         bio,
         address,
-        services_offered,
+        phone,
+        email,
+        service_categories,
+        service_description,
+        pricing_info,
+        years_experience,
         latitude,
         longitude,
         rating,
-        total_reviews
+        total_reviews,
+        profile_completed
       `)
       .eq('role', 'provider')
       .not('latitude', 'is', null)
@@ -80,26 +88,74 @@ Deno.serve(async (req: Request) => {
         if (!provider.latitude || !provider.longitude) {
           return false;
         }
-        
+
         const distance = calculateDistance(
           lat, lng,
           parseFloat(provider.latitude),
           parseFloat(provider.longitude)
         );
-        
+
         provider.distance = Math.round(distance * 10) / 10;
-        
+
         if (distance > radius) {
           return false;
         }
-        
+
         if (category && category !== 'all') {
-          return provider.services_offered?.includes(category);
+          const categories = Array.isArray(provider.service_categories)
+            ? provider.service_categories
+            : typeof provider.service_categories === 'string'
+              ? provider.service_categories.split(',').map((item: string) => item.trim()).filter(Boolean)
+              : [];
+
+          return categories.includes(category);
         }
-        
+
+        if (!Number.isNaN(minRating) && minRating > 0) {
+          const ratingValue = typeof provider.rating === 'number'
+            ? provider.rating
+            : provider.rating
+              ? parseFloat(provider.rating)
+              : 0;
+
+          if (!ratingValue || ratingValue < minRating) {
+            return false;
+          }
+        }
+
         return true;
       })
-      .sort((a, b) => (a.distance || 0) - (b.distance || 0));
+      .map(provider => {
+        const categories = Array.isArray(provider.service_categories)
+          ? provider.service_categories
+          : typeof provider.service_categories === 'string'
+            ? provider.service_categories.split(',').map((item: string) => item.trim()).filter(Boolean)
+            : [];
+
+        return {
+          id: provider.id,
+          name: provider.name,
+          full_name: provider.full_name,
+          business_name: provider.business_name,
+          contact_person: provider.contact_person,
+          profile_pic: provider.profile_pic,
+          bio: provider.bio,
+          address: provider.address,
+          phone: provider.phone,
+          email: provider.email,
+          service_categories: categories,
+          service_description: provider.service_description,
+          pricing_info: provider.pricing_info,
+          years_experience: provider.years_experience,
+          latitude: provider.latitude,
+          longitude: provider.longitude,
+          rating: provider.rating,
+          total_reviews: provider.total_reviews,
+          profile_completed: provider.profile_completed,
+          distance_km: provider.distance,
+        };
+      })
+      .sort((a, b) => (a.distance_km || 0) - (b.distance_km || 0));
 
     return new Response(
       JSON.stringify({

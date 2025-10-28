@@ -1,142 +1,248 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ServiceListing, ServiceFilters } from '../../types/marketplace';
 import { ServiceCard } from './ServiceCard';
 import { ServiceFiltersComponent } from './ServiceFilters';
 import { ServiceDetailsModal } from './ServiceDetailsModal';
 import { BookingModal } from '../bookings/BookingModal';
 import { ChatModal } from './ChatModal';
-import { Search, MapPin, Filter } from 'lucide-react';
+import { Search, MapPin, Filter, AlertTriangle } from 'lucide-react';
+import { mapAPI } from '../../lib/api';
 
-interface ServiceMarketplaceProps {
-  onNavigate: (view: string, providerId?: string, sessionId?: string) => void;
+interface Coordinates {
+  lat: number;
+  lng: number;
 }
 
+interface NearbyProviderResponse {
+  success: boolean;
+  providers: any[];
+  center: { lat: number; lng: number };
+  radius: number;
+  error?: string;
+}
 
+const DEFAULT_RADIUS = 50;
 
-export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigateTo }) => {
+const parsePriceInfo = (pricingInfo?: string | null): { price: number | null; unit: 'hour' | 'day' | 'session' | 'fixed' } => {
+  if (!pricingInfo) {
+    return { price: null, unit: 'session' };
+  }
+
+  const lower = pricingInfo.toLowerCase();
+  const priceMatch = pricingInfo.match(/(\d+[\.,]?\d*)/);
+  const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '')) : null;
+
+  let unit: 'hour' | 'day' | 'session' | 'fixed' = 'session';
+  if (lower.includes('hour')) unit = 'hour';
+  else if (lower.includes('day')) unit = 'day';
+  else if (lower.includes('season') || lower.includes('project')) unit = 'fixed';
+
+  return { price, unit };
+};
+
+const generateAvailableDates = (days = 5): string[] =>
+  Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index + 1);
+    return date.toISOString().split('T')[0];
+  });
+
+const applySearchFilter = (services: ServiceListing[], query: string): ServiceListing[] => {
+  if (!query.trim()) {
+    return services;
+  }
+
+  const normalized = query.toLowerCase();
+  return services.filter((service) => {
+    const haystacks = [
+      service.title,
+      service.description,
+      service.providerName,
+      service.location,
+      service.pricingInfo,
+      ...(service.specializations ?? []),
+    ]
+      .filter(Boolean)
+      .map((value) => value!.toString().toLowerCase());
+
+    return haystacks.some((value) => value.includes(normalized));
+  });
+};
+
+export const ServiceMarketplace: React.FC = () => {
   const [services, setServices] = useState<ServiceListing[]>([]);
   const [filteredServices, setFilteredServices] = useState<ServiceListing[]>([]);
-  const [filters, setFilters] = useState<ServiceFilters>({});
+  const [filters, setFilters] = useState<ServiceFilters>({ radiusKm: DEFAULT_RADIUS });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedService, setSelectedService] = useState<ServiceListing | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<Coordinates | null>(null);
+  const [locationSource, setLocationSource] = useState<'profile' | 'browser' | null>(null);
+  const [profileAddress, setProfileAddress] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; name?: string; role?: string } | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Mock data for services
-    const mockServices: ServiceListing[] = [
-      {
-        id: 'service-1',
-        providerId: '550e8400-e29b-41d4-a716-446655440001',
-        providerName: 'AgriEquip Services',
-        providerRating: 4.8,
-        category: 'machinery',
-        title: 'John Deere Tractor Rental',
-        description: 'Modern 75HP tractor perfect for land preparation, plowing, and cultivation. Well-maintained with GPS tracking.',
-        price: 150,
-        priceUnit: 'day',
-        location: 'Kumasi, Ashanti Region',
-        district: 'Kumasi',
-        coordinates: { lat: 6.6885, lng: -1.6244 },
-        availability: 'available',
-        availableDates: ['2025-01-15', '2025-01-16', '2025-01-17'],
-        equipment: ['John Deere 5075E', 'Plow attachment', 'Cultivator'],
-        images: ['https://images.pexels.com/photos/2132250/pexels-photo-2132250.jpeg'],
-        createdAt: '2025-01-01T00:00:00Z',
-        updatedAt: '2025-01-10T00:00:00Z',
-        gps_enabled: true, // ✅ Added property to show "Track this booking"
-      },
-      {
-        id: 'service-2',
-        providerId: '550e8400-e29b-41d4-a716-446655440002',
-        providerName: 'Farm Tech Solutions',
-        providerRating: 4.6,
-        category: 'mechanic',
-        title: 'Equipment Repair & Maintenance',
-        description: 'Professional repair services for all farm equipment. 15+ years experience with tractors, pumps, and irrigation systems.',
-        price: 80,
-        priceUnit: 'hour',
-        location: 'Accra, Greater Accra',
-        district: 'Accra',
-        coordinates: { lat: 5.6037, lng: -0.1870 },
-        availability: 'available',
-        availableDates: ['2025-01-12', '2025-01-13', '2025-01-14'],
-        specializations: ['Tractor repair', 'Pump maintenance', 'Irrigation systems'],
-        createdAt: '2025-01-02T00:00:00Z',
-        updatedAt: '2025-01-09T00:00:00Z',
-        gps_enabled: false,
-      },
-      {
-        id: 'service-3',
-        providerId: '550e8400-e29b-41d4-a716-446655440003',
-        providerName: 'Dr. Kwame Asante',
-        providerRating: 4.9,
-        category: 'extension',
-        title: 'Crop Advisory & Soil Testing',
-        description: 'Agricultural extension services including crop planning, soil analysis, pest management, and yield optimization strategies.',
-        price: 200,
-        priceUnit: 'session',
-        location: 'Tamale, Northern Region',
-        district: 'Tamale',
-        coordinates: { lat: 9.4034, lng: -0.8424 },
-        availability: 'available',
-        availableDates: ['2025-01-18', '2025-01-19', '2025-01-20'],
-        specializations: ['Soil testing', 'Crop planning', 'Pest management', 'Organic farming'],
-        createdAt: '2025-01-03T00:00:00Z',
-        updatedAt: '2025-01-08T00:00:00Z',
-        gps_enabled: false,
-      },
-    ];
-
-    setServices(mockServices);
-    setFilteredServices(mockServices);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    let filtered = [...services];
-
-    if (filters.category && filters.category !== 'all') {
-      filtered = filtered.filter(service => service.category === filters.category);
+  const requestBrowserLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Location services are not supported in this browser.');
+      setLocationLoading(false);
+      return;
     }
 
-    if (filters.district) {
-      filtered = filtered.filter(service =>
-        service.district.toLowerCase().includes(filters.district!.toLowerCase())
-      );
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocationSource('browser');
+        setLocationLoading(false);
+      },
+      (error) => {
+        console.error('Browser geolocation failed:', error);
+        setLocationError('We could not determine your location. Update your profile with coordinates to see nearby providers.');
+        setLocationLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const mapProviderToListing = (provider: any): ServiceListing => {
+    const categories: string[] = Array.isArray(provider.service_categories)
+      ? provider.service_categories
+      : typeof provider.service_categories === 'string'
+        ? provider.service_categories.split(',').map((item: string) => item.trim()).filter(Boolean)
+        : [];
+
+    const primaryCategory = categories[0] ?? undefined;
+    const { price, unit } = parsePriceInfo(provider.pricing_info);
+    const latitude = provider.latitude ? parseFloat(provider.latitude) : null;
+    const longitude = provider.longitude ? parseFloat(provider.longitude) : null;
+
+    return {
+      id: provider.id,
+      providerId: provider.id,
+      providerName: provider.business_name || provider.full_name || provider.name || 'Service Provider',
+      providerRating: typeof provider.rating === 'number' ? provider.rating : provider.rating ? parseFloat(provider.rating) : null,
+      title: provider.business_name || provider.service_description || 'Agricultural Service',
+      category: primaryCategory,
+      description: provider.service_description,
+      price,
+      priceUnit: unit,
+      pricingInfo: provider.pricing_info,
+      location: provider.address,
+      district: provider.address,
+      coordinates: latitude !== null && longitude !== null ? { lat: latitude, lng: longitude } : undefined,
+      distanceKm: provider.distance_km ?? null,
+      availability: price ? 'available' : undefined,
+      availableDates: generateAvailableDates(),
+      specializations: categories,
+      images: provider.profile_pic ? [provider.profile_pic] : undefined,
+      phone: provider.phone ?? null,
+      email: provider.email ?? null,
+    };
+  };
+
+  const fetchNearbyProviders = async (activeFilters: ServiceFilters) => {
+    if (!userLocation) {
+      return;
     }
 
-    if (filters.availability && filters.availability !== 'all') {
-      if (filters.availability === 'available') {
-        filtered = filtered.filter(service => service.availability === 'available');
-      } else if (filters.availability === 'today') {
-        const today = new Date().toISOString().split('T')[0];
-        filtered = filtered.filter(service =>
-          service.availability === 'available' &&
-          service.availableDates.includes(today)
-        );
+    setLoading(true);
+    setLocationError(null);
+
+    try {
+      const response = (await mapAPI.getNearbyServices({
+        lat: userLocation.lat,
+        lng: userLocation.lng,
+        radius: activeFilters.radiusKm ?? DEFAULT_RADIUS,
+        category: activeFilters.category,
+        minRating: activeFilters.minRating,
+      })) as NearbyProviderResponse;
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to fetch nearby providers');
+      }
+
+      const mapped = (response.providers ?? []).map(mapProviderToListing);
+      setServices(mapped);
+      setFilteredServices(applySearchFilter(mapped, searchQuery));
+
+      if (mapped.length === 0) {
+        setLocationError('No providers found within the selected radius. Try increasing the search distance or adjusting your filters.');
+      }
+    } catch (error) {
+      console.error('Failed to load nearby services:', error);
+      setServices([]);
+      setFilteredServices([]);
+      setLocationError('Unable to load nearby providers right now. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadProfileLocation = async (userId: string) => {
+    setLocationLoading(true);
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        const profile = data.user;
+        setProfileAddress(profile.address ?? null);
+
+        if (profile.latitude && profile.longitude) {
+          setUserLocation({ lat: parseFloat(profile.latitude), lng: parseFloat(profile.longitude) });
+          setLocationSource('profile');
+          setLocationLoading(false);
+          return;
+        }
+      }
+
+      requestBrowserLocation();
+    } catch (error) {
+      console.error('Failed to load profile location:', error);
+      requestBrowserLocation();
+    }
+  };
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const parsed = JSON.parse(storedUser);
+        if (parsed?.id) {
+          setCurrentUser(parsed);
+          loadProfileLocation(parsed.id);
+          return;
+        }
+      } catch (error) {
+        console.warn('Failed to parse stored user session:', error);
       }
     }
 
-    if (searchQuery) {
-      filtered = filtered.filter(service =>
-        service.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.providerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (service.equipment && service.equipment.some(eq =>
-          eq.toLowerCase().includes(searchQuery.toLowerCase())
-        )) ||
-        (service.specializations && service.specializations.some(spec =>
-          spec.toLowerCase().includes(searchQuery.toLowerCase())
-        ))
-      );
-    }
+    requestBrowserLocation();
+  }, []);
 
-    setFilteredServices(filtered);
-  }, [services, filters, searchQuery]);
+  useEffect(() => {
+    if (userLocation && !locationLoading) {
+      fetchNearbyProviders(filters);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation]);
+
+  useEffect(() => {
+    setFilteredServices(applySearchFilter(services, searchQuery));
+  }, [searchQuery, services]);
 
   const handleViewDetails = (service: ServiceListing) => {
     setSelectedService(service);
@@ -144,25 +250,58 @@ export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigate
   };
 
   const handleBookService = (service: ServiceListing) => {
+    if (!currentUser) {
+      setFeedback('Please sign in to book a service.');
+      return;
+    }
+
+    if (service.price === null || service.price === undefined) {
+      setFeedback('This provider has not shared pricing details. Contact them directly to arrange booking.');
+      return;
+    }
+
     setSelectedService(service);
     setShowBookingModal(true);
   };
 
   const handleMessageProvider = (service: ServiceListing) => {
+    if (!currentUser) {
+      setFeedback('Please sign in to message a provider.');
+      return;
+    }
+
     setSelectedService(service);
     setShowChatModal(true);
   };
 
-  const handleFiltersChange = (newFilters: ServiceFilters) => {
-    setFilters(newFilters);
+  const handleFiltersChange = (updatedFilters: ServiceFilters) => {
+    const merged = {
+      ...updatedFilters,
+      radiusKm: updatedFilters.radiusKm ?? filters.radiusKm ?? DEFAULT_RADIUS,
+    };
+    setFilters(merged);
+    fetchNearbyProviders(merged);
   };
 
-  if (loading) {
+  const activeRadius = filters.radiusKm ?? DEFAULT_RADIUS;
+
+  const locationSummary = useMemo(() => {
+    if (!userLocation) return null;
+
+    const sourceLabel = locationSource === 'profile' ? 'your farm profile' : 'your current location';
+    const coordinates = `${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`;
+
+    return profileAddress
+      ? `Showing providers within ${activeRadius} km of ${profileAddress} (${sourceLabel}).`
+      : `Showing providers within ${activeRadius} km of ${coordinates} (${sourceLabel}).`;
+  }, [userLocation, profileAddress, activeRadius, locationSource]);
+
+  if (locationLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading services...</p>
+          <p className="text-gray-600">Determining your location…</p>
         </div>
       </div>
     );
@@ -170,16 +309,20 @@ export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigate
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Service Marketplace</h1>
               <p className="text-gray-600">Find trusted agricultural services near you</p>
+              {locationSummary && (
+                <div className="mt-3 flex items-start text-sm text-gray-500">
+                  <MapPin className="w-4 h-4 text-green-600 mr-2 mt-0.5" />
+                  <span>{locationSummary}</span>
+                </div>
+              )}
             </div>
 
-            {/* Search Bar */}
             <div className="flex-1 max-w-lg">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
@@ -188,12 +331,11 @@ export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigate
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="Search for tractors, repairs, advisory..."
+                  placeholder="Search by service, provider or keywords"
                 />
               </div>
             </div>
 
-            {/* Filter Toggle */}
             <button
               onClick={() => setShowFilters(!showFilters)}
               className="lg:hidden bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 flex items-center"
@@ -202,31 +344,52 @@ export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigate
               Filters
             </button>
           </div>
+
+          {feedback && (
+            <div className="mt-4 bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 mt-0.5" />
+              <div className="flex-1 text-sm">{feedback}</div>
+              <button onClick={() => setFeedback(null)} className="text-xs text-yellow-700 hover:underline">
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {locationError && (
+            <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="w-5 h-5 mt-0.5" />
+              <div className="flex-1 text-sm">{locationError}</div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Services Grid */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
           <div className={`lg:w-80 ${showFilters ? 'block' : 'hidden lg:block'}`}>
-            <ServiceFiltersComponent
-              filters={filters}
-              onFiltersChange={handleFiltersChange}
-            />
+            <ServiceFiltersComponent filters={filters} onFiltersChange={handleFiltersChange} />
           </div>
 
           <div className="flex-1">
             <div className="flex justify-between items-center mb-6">
               <p className="text-gray-600">
-                {filteredServices.length} service{filteredServices.length !== 1 ? 's' : ''} found
+                {loading
+                  ? 'Loading nearby services…'
+                  : `${filteredServices.length} service${filteredServices.length === 1 ? '' : 's'} found`}
               </p>
             </div>
 
-            {filteredServices.length === 0 ? (
-              <div className="text-center py-12">
+            {loading ? (
+              <div className="bg-white border border-dashed border-green-200 rounded-xl p-12 text-center text-gray-500">
+                Fetching the best matches for your farm…
+              </div>
+            ) : filteredServices.length === 0 ? (
+              <div className="bg-white border border-dashed border-gray-200 rounded-xl p-12 text-center">
                 <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No services found</h3>
-                <p className="text-gray-600">Try adjusting your filters or search terms</p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No services found nearby</h3>
+                <p className="text-gray-600 mb-3">
+                  Try increasing the search radius or adjusting your filters to see more providers.
+                </p>
               </div>
             ) : (
               <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -245,35 +408,39 @@ export const ServiceMarketplace: React.FC<ServiceMarketplaceProps> = ({ navigate
         </div>
       </div>
 
-      {/* Modals */}
       {showDetailsModal && selectedService && (
         <ServiceDetailsModal
           service={selectedService}
           onClose={() => setShowDetailsModal(false)}
           onBookService={() => {
             setShowDetailsModal(false);
-            setShowBookingModal(true);
+            handleBookService(selectedService);
           }}
           onMessageProvider={() => {
             setShowDetailsModal(false);
-            setShowChatModal(true);
+            handleMessageProvider(selectedService);
           }}
         />
       )}
 
-  {showBookingModal && selectedService && (
-  <BookingModal
-    service={selectedService}
-    onClose={() => setShowBookingModal(false)}
-    onBookingComplete={() => setShowBookingModal(false)}
-    onNavigate={onNavigate} // ✅ passes navigation function down
-  />
-)}
-
-
-      {showChatModal && selectedService && (
-        <ChatModal
+      {showBookingModal && selectedService && currentUser && (
+        <BookingModal
           service={selectedService}
+          onClose={() => setShowBookingModal(false)}
+          onBookingComplete={() => setShowBookingModal(false)}
+        />
+      )}
+
+      {showChatModal && selectedService && currentUser && (
+        <ChatModal
+          service={{
+            providerId: selectedService.providerId,
+            providerName: selectedService.providerName,
+            title: selectedService.title,
+            providerProfilePic: selectedService.images?.[0],
+          }}
+          userId={currentUser.id}
+          userName={currentUser.name || 'Farmer'}
           onClose={() => setShowChatModal(false)}
         />
       )}

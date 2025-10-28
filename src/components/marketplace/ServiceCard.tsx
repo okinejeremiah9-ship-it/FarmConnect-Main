@@ -1,18 +1,17 @@
 import React from 'react';
 import { ServiceListing } from '../../types/marketplace';
-import { UserReviews } from '../reviews/UserReviews';
-import { 
-  Star, 
-  MapPin, 
-  Clock, 
-  DollarSign, 
-  Tractor, 
-  Wrench, 
-  Users, 
+import {
+  Star,
+  MapPin,
+  DollarSign,
+  Tractor,
+  Wrench,
+  Users,
   BookOpen,
   Eye,
   Calendar,
-  MessageSquare
+  MessageSquare,
+  Ruler
 } from 'lucide-react';
 
 interface ServiceCardProps {
@@ -58,19 +57,6 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
     }
   };
 
-  const getAvailabilityColor = (availability: string) => {
-    switch (availability) {
-      case 'available':
-        return 'bg-green-100 text-green-800';
-      case 'busy':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'unavailable':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   return (
     <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-200">
       {/* Service Image */}
@@ -93,12 +79,17 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
         <div className="flex justify-between items-start mb-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(service.category)}`}>
-                {service.category.charAt(0).toUpperCase() + service.category.slice(1)}
-              </span>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAvailabilityColor(service.availability)}`}>
-                {service.availability.charAt(0).toUpperCase() + service.availability.slice(1)}
-              </span>
+              {service.category && (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(service.category)}`}>
+                  {service.category.charAt(0).toUpperCase() + service.category.slice(1)}
+                </span>
+              )}
+              {service.distanceKm !== undefined && service.distanceKm !== null && (
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 flex items-center gap-1">
+                  <Ruler className="w-3 h-3" />
+                  {service.distanceKm.toFixed(1)} km away
+                </span>
+              )}
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-1">{service.title}</h3>
             <p className="text-sm text-gray-600">{service.providerName}</p>
@@ -106,38 +97,52 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
         </div>
 
         {/* Rating */}
-        <div className="flex items-center mb-3">
-          <div className="flex items-center">
-            <Star className="w-4 h-4 text-yellow-400 fill-current" />
-            <span className="ml-1 text-sm font-medium text-gray-900">{service.providerRating}</span>
+        {(service.providerRating || service.providerRating === 0) && (
+          <div className="flex items-center mb-3">
+            <div className="flex items-center">
+              <Star className="w-4 h-4 text-yellow-400 fill-current" />
+              <span className="ml-1 text-sm font-medium text-gray-900">{service.providerRating?.toFixed(1)}</span>
+            </div>
+            <span className="ml-2 text-sm text-gray-500">Rated provider</span>
           </div>
-          <span className="ml-2 text-sm text-gray-500">(24 reviews)</span>
-        </div>
+        )}
 
         {/* Description */}
-        <p className="text-sm text-gray-600 mb-4 line-clamp-2">{service.description}</p>
+        {service.description && (
+          <p className="text-sm text-gray-600 mb-4 line-clamp-2">{service.description}</p>
+        )}
 
         {/* Details */}
         <div className="space-y-2 mb-4">
-          <div className="flex items-center text-sm text-gray-600">
-            <MapPin className="w-4 h-4 mr-2" />
-            <span>{service.location}</span>
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <DollarSign className="w-4 h-4 mr-2" />
-            <span>₵{service.price}/{service.priceUnit}</span>
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <Calendar className="w-4 h-4 mr-2" />
-            <span>Next available: {new Date(service.availableDates[0]).toLocaleDateString()}</span>
-          </div>
+          {service.location && (
+            <div className="flex items-center text-sm text-gray-600">
+              <MapPin className="w-4 h-4 mr-2" />
+              <span>{service.location}</span>
+            </div>
+          )}
+          {(service.price || service.pricingInfo) && (
+            <div className="flex items-center text-sm text-gray-600">
+              <DollarSign className="w-4 h-4 mr-2" />
+              {service.price ? (
+                <span>₵{service.price}/{service.priceUnit ?? 'session'}</span>
+              ) : (
+                <span>{service.pricingInfo}</span>
+              )}
+            </div>
+          )}
+          {service.availableDates && service.availableDates.length > 0 && (
+            <div className="flex items-center text-sm text-gray-600">
+              <Calendar className="w-4 h-4 mr-2" />
+              <span>Next available: {new Date(service.availableDates[0]).toLocaleDateString()}</span>
+            </div>
+          )}
         </div>
 
-        {/* Equipment/Specializations */}
-        {(service.equipment || service.specializations) && (
+        {/* Categories / Tags */}
+        {service.specializations && service.specializations.length > 0 && (
           <div className="mb-4">
             <div className="flex flex-wrap gap-1">
-              {(service.equipment || service.specializations)?.slice(0, 2).map((item, index) => (
+              {service.specializations.slice(0, 3).map((item, index) => (
                 <span
                   key={index}
                   className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
@@ -145,14 +150,11 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                   {item}
                 </span>
               ))}
-              {(service.equipment || service.specializations)!.length > 2 && (
+              {service.specializations.length > 3 && (
                 <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                  +{(service.equipment || service.specializations)!.length - 2} more
+                  +{service.specializations.length - 3} more
                 </span>
               )}
-              <span className="ml-2 text-sm text-gray-500">
-                ({Math.floor(Math.random() * 50) + 5} reviews)
-              </span>
             </div>
           </div>
         )}
@@ -175,7 +177,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           </button>
           <button
             onClick={() => onBookService(service)}
-            disabled={service.availability !== 'available'}
+            disabled={service.price === null || service.price === undefined}
             className="bg-green-600 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             <Calendar className="w-4 h-4 mr-1" />
