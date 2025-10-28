@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserStats } from '../../hooks/useUserStats';
 import { ServiceRequest } from '../../types/auth';
@@ -6,6 +6,8 @@ import { ServiceMarketplace } from '../marketplace/ServiceMarketplace';
 import { EscrowStatusBadge } from '../escrow/EscrowStatusBadge';
 import { DisputeModal } from '../escrow/DisputeModal';
 import { ReviewModal } from '../reviews/ReviewModal';
+import { useRealtimeBookingUpdates } from '../../hooks/useRealtimeSubscription';
+import { escrowAPI, disputeAPI } from '../../lib/api';
 import {
   Plus,
   Clock,
@@ -18,7 +20,8 @@ import {
   Wrench,
   MessageSquare,
   Search,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 
 interface FarmerDashboardProps {
@@ -29,96 +32,127 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
 
   const { user } = useAuth();
   const { stats, loading: statsLoading, refreshStats } = useUserStats(user?.id);
-  const [activeRequests, setActiveRequests] = useState<ServiceRequest[]>([]);
+  const { bookings, loading: bookingsLoading } = useRealtimeBookingUpdates(user?.id ?? '');
   const [showRequestForm, setShowRequestForm] = useState(false);
   const [currentView, setCurrentView] = useState<'dashboard' | 'marketplace'>('dashboard');
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [selectedEscrow, setSelectedEscrow] = useState<any>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedBookingForReview, setSelectedBookingForReview] = useState<any>(null);
+  const [disputes, setDisputes] = useState<any[]>([]);
+  const [disputesLoading, setDisputesLoading] = useState(false);
+  const [releasingEscrowId, setReleasingEscrowId] = useState<string | null>(null);
+
+  const farmerBookings = useMemo(() => {
+    if (!user?.id) return [];
+
+    return (bookings || [])
+      .filter((booking) => booking.farmer_id === user.id)
+      .map((booking) => {
+        const escrowRecords = Array.isArray(booking.escrow_wallet)
+          ? booking.escrow_wallet
+          : booking.escrow_wallet
+          ? [booking.escrow_wallet]
+          : [];
+
+        const escrowRecord = escrowRecords[0] || null;
+
+        const request: ServiceRequest = {
+          id: booking.id,
+          farmerId: booking.farmer_id,
+          farmerName: booking.farmer?.name || user.name || 'Farmer',
+          serviceId: booking.service_id,
+          serviceTitle: booking.service?.title || booking.service_title || 'Service Request',
+          providerId: booking.provider_id,
+          providerName: booking.provider?.name || booking.provider_name || 'Provider',
+          status: (booking.status ?? 'pending') as ServiceRequest['status'],
+          location: booking.service_location || 'Not specified',
+          dateNeeded: booking.scheduled_date,
+          message: booking.notes || '',
+          price: Number(booking.total_price ?? 0),
+          createdAt: booking.created_at,
+          updatedAt: booking.updated_at || booking.created_at,
+          escrowStatus: escrowRecord?.status,
+          escrowId: escrowRecord?.id,
+          canReview: booking.status === 'completed',
+        };
+
+        return {
+          booking,
+          request,
+          escrowRecord,
+        };
+      });
+  }, [bookings, user?.id, user?.name]);
+
+  const activeRequests = useMemo(() => {
+    return farmerBookings.filter(({ request }) =>
+      ['pending', 'requested', 'accepted', 'in-progress'].includes(request.status)
+    );
+  }, [farmerBookings]);
+
+  const escrowActions = useMemo(() => {
+    return farmerBookings.filter(
+      ({ booking, escrowRecord }) =>
+        escrowRecord &&
+        escrowRecord.status === 'funded' &&
+        booking.status === 'completed'
+    );
+  }, [farmerBookings]);
+
+  const openDisputes = useMemo(() => {
+    return disputes.filter((dispute) => dispute.status !== 'resolved');
+  }, [disputes]);
+
+  const loadDisputes = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      setDisputesLoading(true);
+      const data = await disputeAPI.listForUser(user.id);
+
+      if (data.success) {
+        setDisputes(data.disputes || []);
+      }
+    } catch (error) {
+      console.error('Failed to load disputes:', error);
+    } finally {
+      setDisputesLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    // Mock data for active requests
-    const mockRequests: ServiceRequest[] = [
-      {
-        id: '1',
-        farmerId: user?.id || '1',
-        farmerName: user?.name || 'John Farmer',
-        serviceId: 'tractor-001',
-        serviceTitle: 'John Deere Tractor Rental',
-        providerId: 'provider-1',
-        providerName: 'AgriEquip Services',
-        status: 'accepted',
-        location: 'Kumasi, Ashanti Region',
-        dateNeeded: '2025-01-15',
-        message: 'Need tractor for land preparation',
-        price: 150,
-        createdAt: '2025-01-10T10:00:00Z',
-        updatedAt: '2025-01-10T14:30:00Z',
-      },
-      {
-        id: '2',
-        farmerId: user?.id || '1',
-        farmerName: user?.name || 'John Farmer',
-        serviceId: 'repair-001',
-        serviceTitle: 'Irrigation System Repair',
-        providerId: 'provider-2',
-        providerName: 'Farm Tech Solutions',
-        status: 'in-progress',
-        location: 'Tamale, Northern Region',
-        dateNeeded: '2025-01-12',
-        message: 'Irrigation pump not working properly',
-        price: 80,
-        createdAt: '2025-01-08T09:00:00Z',
-        updatedAt: '2025-01-12T08:00:00Z',
-        escrowStatus: 'funded',
-        escrowId: 'escrow-123',
-      },
-      {
-        id: '3',
-        farmerId: user?.id || '1',
-        farmerName: user?.name || 'John Farmer',
-        serviceId: 'advisory-001',
-        serviceTitle: 'Crop Advisory Session',
-        providerId: 'provider-3',
-        providerName: 'Dr. Kwame Asante',
-        status: 'completed',
-        location: 'Tamale, Northern Region',
-        dateNeeded: '2025-01-05',
-        message: 'Need advice on pest management',
-        price: 200,
-        createdAt: '2025-01-05T09:00:00Z',
-        updatedAt: '2025-01-05T16:00:00Z',
-        escrowStatus: 'released',
-        escrowId: 'escrow-456',
-        canReview: true, // This service can be reviewed
-      },
-    ];
-    setActiveRequests(mockRequests);
-  }, [user]);
+    loadDisputes();
+  }, [loadDisputes]);
 
-  const handleRaiseDispute = (request: any) => {
+  const handleRaiseDispute = (booking: any, escrowRecord: any) => {
+    if (!escrowRecord?.id) {
+      alert('Escrow details are not available for this booking yet.');
+      return;
+    }
+
     setSelectedEscrow({
-      id: request.escrowId,
-      amount: request.price,
+      id: escrowRecord.id,
+      amount: Number(escrowRecord.amount ?? 0),
+      bookingId: booking.id,
     });
     setShowDisputeModal(true);
   };
 
   const handleDisputeCreated = () => {
-    // Refresh requests or update status
-    console.log('Dispute created successfully');
-    refreshStats(); // Refresh stats when dispute is created
+    setShowDisputeModal(false);
+    loadDisputes();
+    refreshStats();
   };
 
-  const handleReviewService = (request: any) => {
+  const handleReviewService = (booking: any) => {
     setSelectedBookingForReview({
-      id: request.id,
-      serviceTitle: request.serviceTitle,
-      providerName: request.providerName,
-      providerId: request.providerId,
-      farmerId: request.farmerId,
-      serviceId: request.serviceId,
+      id: booking.id,
+      serviceTitle: booking.service?.title || booking.service_title || 'Service',
+      providerName: booking.provider?.name,
+      providerId: booking.provider_id,
+      farmerId: booking.farmer_id,
+      serviceId: booking.service_id,
     });
     setShowReviewModal(true);
   };
@@ -128,12 +162,27 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
     refreshStats();
   };
 
-  const handleBookingComplete = () => {
-    refreshStats(); // Refresh stats when booking is completed
+  const handleReleaseEscrow = async (escrowId: string) => {
+    if (!user?.id) return;
+
+    const confirmRelease = window.confirm('Release payment to the provider for this completed service?');
+    if (!confirmRelease) return;
+
+    try {
+      setReleasingEscrowId(escrowId);
+      await escrowAPI.release(escrowId, user.id);
+      refreshStats();
+    } catch (error: any) {
+      console.error('Failed to release escrow:', error);
+      alert(error?.message || 'Failed to release payment');
+    } finally {
+      setReleasingEscrowId(null);
+    }
   };
 
   const getStatusIcon = (status: ServiceRequest['status']) => {
     switch (status) {
+      case 'pending':
       case 'requested':
         return <Clock className="w-5 h-5 text-yellow-500" />;
       case 'accepted':
@@ -149,6 +198,7 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
 
   const getStatusColor = (status: ServiceRequest['status']) => {
     switch (status) {
+      case 'pending':
       case 'requested':
         return 'bg-yellow-100 text-yellow-800';
       case 'accepted':
@@ -156,6 +206,19 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
       case 'in-progress':
         return 'bg-orange-100 text-orange-800';
       case 'completed':
+        return 'bg-green-100 text-green-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getDisputeBadgeStyle = (status: string) => {
+    switch (status) {
+      case 'open':
+        return 'bg-red-100 text-red-800';
+      case 'investigating':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'resolved':
         return 'bg-green-100 text-green-800';
       default:
         return 'bg-gray-100 text-gray-800';
@@ -287,7 +350,12 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
           </div>
 
           <div className="p-6">
-            {activeRequests.length === 0 ? (
+            {bookingsLoading ? (
+              <div className="flex items-center justify-center py-12 text-gray-600">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                Loading your requests...
+              </div>
+            ) : activeRequests.length === 0 ? (
               <div className="text-center py-12">
                 <Tractor className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No active requests</h3>
@@ -307,81 +375,221 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
               </div>
             ) : (
               <div className="space-y-4">
-                {activeRequests.map((request) => (
-                  <div key={request.id} className="border border-gray-200 rounded-lg p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex items-start space-x-4">
-                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                          {request.serviceTitle.includes('Tractor') ? (
-                            <Tractor className="w-6 h-6 text-green-600" />
-                          ) : (
-                            <Wrench className="w-6 h-6 text-green-600" />
+                {activeRequests.map(({ booking, request, escrowRecord }) => {
+                  const isTractor = request.serviceTitle?.toLowerCase().includes('tractor');
+                  const canReleaseEscrow =
+                    escrowRecord?.status === 'funded' && booking.status === 'completed';
+
+                  return (
+                    <div key={request.id} className="border border-gray-200 rounded-lg p-6">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-start space-x-4">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                            {isTractor ? (
+                              <Tractor className="w-6 h-6 text-green-600" />
+                            ) : (
+                              <Wrench className="w-6 h-6 text-green-600" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {request.serviceTitle}
+                            </h3>
+                            <p className="text-gray-600">by {request.providerName}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(request.status)}
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(request.status)}`}>
+                            {request.status.charAt(0).toUpperCase() + request.status.slice(1).replace('-', ' ')}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-3 gap-4 mb-4">
+                        <div className="flex items-center text-gray-600">
+                          <MapPin className="w-4 h-4 mr-2" />
+                          <span className="text-sm">{request.location}</span>
+                        </div>
+                        <div className="flex items-center text-gray-600">
+                          <Calendar className="w-4 h-4 mr-2" />
+                          <span className="text-sm">{new Date(request.dateNeeded).toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex items-center text-gray-600">
+                          <DollarSign className="w-4 h-4 mr-2" />
+                          <span className="text-sm">₵{request.price.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <p className="text-gray-600 text-sm flex-1">{request.message || 'No additional notes'}</p>
+                        <div className="flex flex-wrap gap-2 justify-end">
+                          <button
+                            onClick={() => onNavigate('bookings')}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 flex items-center"
+                          >
+                            <MessageSquare className="w-4 h-4 mr-1" />
+                            Message Provider
+                          </button>
+                          {request.escrowStatus && (
+                            <EscrowStatusBadge
+                              status={request.escrowStatus}
+                              amount={request.price}
+                            />
+                          )}
+                          {canReleaseEscrow && request.escrowId && (
+                            <button
+                              onClick={() => handleReleaseEscrow(request.escrowId!)}
+                              disabled={releasingEscrowId === request.escrowId}
+                              className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 disabled:opacity-60 flex items-center"
+                            >
+                              {releasingEscrowId === request.escrowId ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                  Releasing...
+                                </>
+                              ) : (
+                                'Release Payment'
+                              )}
+                            </button>
+                          )}
+                          {escrowRecord && (
+                            <button
+                              onClick={() => handleRaiseDispute(booking, escrowRecord)}
+                              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700"
+                            >
+                              Report Issue
+                            </button>
+                          )}
+                          {request.status === 'completed' && request.canReview && (
+                            <button
+                              onClick={() => handleReviewService(booking)}
+                              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"
+                            >
+                              Rate Service
+                            </button>
                           )}
                         </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {request.serviceTitle}
-                          </h3>
-                          <p className="text-gray-600">by {request.providerName}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(request.status)}
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(request.status)}`}>
-                          {request.status.charAt(0).toUpperCase() + request.status.slice(1).replace('-', ' ')}
-                        </span>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
-                    <div className="grid md:grid-cols-3 gap-4 mb-4">
-                      <div className="flex items-center text-gray-600">
-                        <MapPin className="w-4 h-4 mr-2" />
-                        <span className="text-sm">{request.location}</span>
-                      </div>
-                      <div className="flex items-center text-gray-600">
-                        <Calendar className="w-4 h-4 mr-2" />
-                        <span className="text-sm">{new Date(request.dateNeeded).toLocaleDateString()}</span>
-                      </div>
-                      <div className="flex items-center text-gray-600">
-                        <DollarSign className="w-4 h-4 mr-2" />
-                        <span className="text-sm">₵{request.price}</span>
-                      </div>
+        {/* Escrow Actions */}
+        <div className="bg-white rounded-xl shadow-sm mt-8">
+          <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Escrow Actions</h2>
+              <p className="text-gray-600">Release funds once you are satisfied with completed services.</p>
+            </div>
+            <button
+              onClick={() => onNavigate('bookings')}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              Manage Bookings
+            </button>
+          </div>
+          <div className="p-6">
+            {escrowActions.length === 0 ? (
+              <p className="text-gray-600">No escrow payments are waiting for release right now.</p>
+            ) : (
+              <div className="space-y-3">
+                {escrowActions.map(({ booking, request, escrowRecord }) => (
+                  <div
+                    key={`${booking.id}-escrow`}
+                    className="border border-gray-100 rounded-lg p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                  >
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">{request.serviceTitle}</h3>
+                      <p className="text-sm text-gray-600">
+                        Provider: {request.providerName} • Completed on{' '}
+                        {new Date(request.dateNeeded).toLocaleDateString()}
+                      </p>
                     </div>
-
-                    <div className="flex justify-between items-center">
-                      <p className="text-gray-600 text-sm">{request.message}</p>
-                      <div className="flex space-x-2">
-                        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 flex items-center">
-                          <MessageSquare className="w-4 h-4 mr-1" />
-                          Chat
-                        </button>
-                        {request.escrowStatus && (
-                          <EscrowStatusBadge 
-                            status={request.escrowStatus} 
-                            amount={request.price}
-                          />
-                        )}
-                        {request.escrowStatus === 'funded' && (
-                          <button 
-                            onClick={() => handleRaiseDispute(request)}
-                            className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700"
-                          >
-                            Report Issue
-                          </button>
-                        )}
-                        {request.status === 'completed' && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-700 font-medium">
+                        Amount: ₵{Number(escrowRecord?.amount ?? request.price).toLocaleString()}
+                      </span>
+                      <button
+                        onClick={() => handleReleaseEscrow(request.escrowId!)}
+                        disabled={releasingEscrowId === request.escrowId}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-60 flex items-center"
+                      >
+                        {releasingEscrowId === request.escrowId ? (
                           <>
-                            {request.canReview && (
-                              <button 
-                                onClick={() => handleReviewService(request)}
-                                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"
-                              >
-                                Rate Service
-                              </button>
-                            )}
+                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                            Releasing...
                           </>
+                        ) : (
+                          'Release Payment'
                         )}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Disputes */}
+        <div className="bg-white rounded-xl shadow-sm mt-8">
+          <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Disputes</h2>
+              <p className="text-gray-600">Monitor any issues raised for your bookings and follow their progress.</p>
+            </div>
+            <button
+              onClick={() => onNavigate('disputes')}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              View All Disputes
+            </button>
+          </div>
+          <div className="p-6">
+            {disputesLoading ? (
+              <div className="flex items-center text-gray-600">
+                <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                Loading disputes...
+              </div>
+            ) : openDisputes.length === 0 ? (
+              <p className="text-gray-600">You have no active disputes at the moment.</p>
+            ) : (
+              <div className="space-y-3">
+                {openDisputes.slice(0, 3).map((dispute) => (
+                  <div
+                    key={dispute.id}
+                    className="border-l-4 border-red-500 bg-red-50 p-4 rounded-lg"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="font-semibold text-gray-900">{dispute.reason}</p>
+                        <p className="text-sm text-gray-600">
+                          Service: {dispute.escrow?.booking?.service?.title || 'Booking'}
+                        </p>
                       </div>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${getDisputeBadgeStyle(dispute.status)}`}
+                      >
+                        {dispute.status.replace('-', ' ')}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600 flex flex-wrap gap-4">
+                      <span>
+                        Amount:{' '}
+                        ₵{Number(dispute.escrow?.amount ?? 0).toLocaleString()}
+                      </span>
+                      <span>
+                        Raised:{' '}
+                        {new Date(dispute.created_at).toLocaleDateString()}
+                      </span>
+                      <span>
+                        Raised by: {dispute.raised_by_user?.name || 'You'}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -475,10 +683,10 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
       {showDisputeModal && selectedEscrow && (
         <DisputeModal
           escrowId={selectedEscrow.id}
-          farmerId={user?.id || ''}
-          amount={selectedEscrow.amount}
+          userId={user?.id || ''}
+          bookingId={selectedEscrow.bookingId}
           onClose={() => setShowDisputeModal(false)}
-          onDisputeCreated={handleDisputeCreated}
+          onSuccess={handleDisputeCreated}
         />
       )}
 

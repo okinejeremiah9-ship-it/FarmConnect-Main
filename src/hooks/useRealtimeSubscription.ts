@@ -2,6 +2,45 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+const BOOKING_SELECT = `
+  *,
+  service:service_id(
+    id,
+    title,
+    category,
+    price_per_hour,
+    price_per_day,
+    cover_image
+  ),
+  farmer:farmer_id(
+    id,
+    name,
+    phone
+  ),
+  provider:provider_id(
+    id,
+    name,
+    phone
+  ),
+  escrow_wallet(
+    id,
+    amount,
+    status,
+    farmer_id,
+    provider_id,
+    booking_id,
+    created_at,
+    updated_at,
+    disputes(
+      id,
+      status,
+      reason,
+      created_at,
+      resolved_at
+    )
+  )
+`;
+
 /**
  * ✅ Realtime Chat Subscription
  * Works even if bookingId is optional.
@@ -162,14 +201,35 @@ export function useRealtimeBookingUpdates(userId: string) {
   useEffect(() => {
     let channel: RealtimeChannel;
 
-    async function setupSubscription() {
-      const { data: initialBookings } = await supabase
+    async function fetchBookingById(id: string) {
+      const { data, error } = await supabase
         .from('bookings')
-        .select('*, service:service_id(title), farmer:farmer_id(name), provider:provider_id(name)')
+        .select(BOOKING_SELECT)
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Failed to load booking', error);
+        return null;
+      }
+
+      return data;
+    }
+
+    async function setupSubscription() {
+      const { data: initialBookings, error } = await supabase
+        .from('bookings')
+        .select(BOOKING_SELECT)
         .or(`farmer_id.eq.${userId},provider_id.eq.${userId}`)
         .order('created_at', { ascending: false });
 
-      setBookings(initialBookings || []);
+      if (error) {
+        console.error('Failed to load bookings', error);
+        setBookings([]);
+      } else {
+        setBookings(initialBookings || []);
+      }
+
       setLoading(false);
 
       channel = supabase
@@ -179,27 +239,38 @@ export function useRealtimeBookingUpdates(userId: string) {
           { event: '*', schema: 'public', table: 'bookings' },
           async (payload) => {
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const booking = payload.new;
-              if (booking.farmer_id === userId || booking.provider_id === userId) {
+              const bookingId = payload.new?.id;
+              if (!bookingId) return;
+
+              const fullBooking = await fetchBookingById(bookingId);
+              if (!fullBooking) return;
+
+              if (fullBooking.farmer_id === userId || fullBooking.provider_id === userId) {
                 setBookings((prev) => {
-                  const index = prev.findIndex((b) => b.id === booking.id);
+                  const index = prev.findIndex((b) => b.id === bookingId);
                   if (index >= 0) {
                     const updated = [...prev];
-                    updated[index] = booking;
+                    updated[index] = fullBooking;
                     return updated;
                   }
-                  return [booking, ...prev];
+                  return [fullBooking, ...prev];
                 });
               }
             } else if (payload.eventType === 'DELETE') {
-              setBookings((prev) => prev.filter((b) => b.id !== payload.old.id));
+              const bookingId = payload.old?.id;
+              if (!bookingId) return;
+              setBookings((prev) => prev.filter((b) => b.id !== bookingId));
             }
           }
         )
         .subscribe();
     }
 
-    if (userId) setupSubscription();
+    if (userId) {
+      setupSubscription();
+    } else {
+      setLoading(false);
+    }
 
     return () => {
       if (channel) supabase.removeChannel(channel);

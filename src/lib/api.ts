@@ -51,7 +51,17 @@ export const escrowAPI = {
 
 export const disputeAPI = {
   getAll: async (adminId: string) => {
-    return fetchAPI(`disputes-list?admin_id=${adminId}`);
+    return fetchAPI('disputes-list', {
+      method: 'POST',
+      body: JSON.stringify({ admin_id: adminId }),
+    });
+  },
+
+  listForUser: async (userId: string) => {
+    return fetchAPI('disputes-list', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
   },
 
   resolve: async (disputeId: string, adminId: string, resolution: string, action: string) => {
