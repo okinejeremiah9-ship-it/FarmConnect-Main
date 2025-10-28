@@ -392,7 +392,7 @@ export const ServiceMarketplace: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
+              <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 items-stretch">
                 {filteredServices.map((service) => (
                   <ServiceCard
                     key={service.id}

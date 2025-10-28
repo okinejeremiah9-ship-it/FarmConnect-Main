@@ -26,7 +26,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { messages, loading } = useRealtimeMessages(bookingId, userId);
+  const { messages, loading } = useRealtimeMessages(userId, otherUserId, bookingId);
 
   useEffect(() => {
     scrollToBottom();

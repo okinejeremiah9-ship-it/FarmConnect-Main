@@ -7,7 +7,11 @@ import { RealtimeChannel } from '@supabase/supabase-js';
  * Works even if bookingId is optional.
  * Listens for both sender and receiver updates in real time.
  */
-export function useRealtimeMessages(bookingId: string | null, userId: string) {
+export function useRealtimeMessages(
+  userId: string,
+  otherUserId: string | null,
+  bookingId: string | null = null
+) {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,50 +19,78 @@ export function useRealtimeMessages(bookingId: string | null, userId: string) {
     let channel: RealtimeChannel;
 
     async function setupSubscription() {
-      if (!userId) return;
+      if (!userId || !otherUserId) return;
 
-      // ✅ Fetch initial chat history
-      const { data: initialMessages, error } = await supabase
+      let baseQuery = supabase
         .from('messages')
         .select(`
           *,
           sender:sender_id(id, name, profile_pic),
           receiver:receiver_id(id, name, profile_pic)
         `)
-        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+        .or(
+          `and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`
+        )
         .order('created_at', { ascending: true });
 
-      if (error) console.error('Error fetching messages:', error);
-      setMessages(initialMessages || []);
+      if (bookingId) {
+        baseQuery = baseQuery.eq('booking_id', bookingId);
+      }
+
+      const { data: initialMessages, error } = await baseQuery;
+
+      if (error) {
+        console.error('Error fetching messages:', error);
+      }
+
+      const filteredInitial = (initialMessages || []).filter((msg) =>
+        (msg.sender_id === userId && msg.receiver_id === otherUserId) ||
+        (msg.sender_id === otherUserId && msg.receiver_id === userId)
+      );
+
+      setMessages(filteredInitial);
       setLoading(false);
 
-      // ✅ Subscribe to any new inserts (for both sides)
       channel = supabase
-        .channel(`realtime:messages:${userId}`)
+        .channel(`realtime:messages:${userId}:${otherUserId}`)
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'messages',
           },
           (payload) => {
+            if (payload.eventType === 'DELETE') {
+              const removed = payload.old as any;
+              if (
+                removed &&
+                ((removed.sender_id === userId && removed.receiver_id === otherUserId) ||
+                  (removed.sender_id === otherUserId && removed.receiver_id === userId))
+              ) {
+                setMessages((prev) => prev.filter((msg) => msg.id !== removed.id));
+              }
+              return;
+            }
+
             const newMsg = payload.new;
-            // Show only relevant messages
             if (
-              newMsg.sender_id === userId ||
-              newMsg.receiver_id === userId ||
-              (bookingId && newMsg.booking_id === bookingId)
+              newMsg &&
+              ((newMsg.sender_id === userId && newMsg.receiver_id === otherUserId) ||
+                (newMsg.sender_id === otherUserId && newMsg.receiver_id === userId)) &&
+              (!bookingId || newMsg.booking_id === bookingId)
             ) {
-              setMessages((prev) => [...prev, newMsg]);
+              setMessages((prev) => {
+                if (payload.eventType === 'UPDATE') {
+                  return prev.map((msg) => (msg.id === newMsg.id ? newMsg : msg));
+                }
+
+                return [...prev, newMsg];
+              });
             }
           }
         )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ Realtime chat connected');
-          }
-        });
+        .subscribe();
     }
 
     setupSubscription();
@@ -68,7 +100,7 @@ export function useRealtimeMessages(bookingId: string | null, userId: string) {
         supabase.removeChannel(channel);
       }
     };
-  }, [bookingId, userId]);
+  }, [bookingId, otherUserId, userId]);
 
   return { messages, loading };
 }
