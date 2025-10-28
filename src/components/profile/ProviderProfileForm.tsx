@@ -3,7 +3,6 @@
 
 import React, { useState } from 'react';
 import { MapPin, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 interface ProviderProfileFormProps {
   user: any;
@@ -73,26 +72,29 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
     e.preventDefault();
     setLoading(true);
 
+    const normalizedCategories = Array.isArray(formData.service_categories)
+      ? formData.service_categories.filter(Boolean)
+      : [];
+
     const updateData = {
-      ...formData,
+      business_name: formData.business_name,
+      contact_person: formData.contact_person,
       name: formData.contact_person,
+      email: formData.email || null,
+      address: formData.address || null,
       latitude: formData.latitude ? parseFloat(formData.latitude) : null,
       longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+      service_categories: normalizedCategories.length > 0 ? normalizedCategories : null,
+      service_description: formData.service_description || null,
+      pricing_info: formData.pricing_info || null,
       years_experience: formData.years_experience
         ? parseInt(formData.years_experience as string)
         : null,
       profile_completed: true,
-      updated_at: new Date().toISOString(),
     };
 
     try {
-      // ✅ Update provider record in Supabase
-      const { error } = await supabase.from('profiles').update(updateData).eq('id', user.id);
-      if (error) throw error;
-
-      // ✅ Update parent state (MainApp)
       await onSave(updateData);
-
       alert('✅ Profile saved successfully!');
     } catch (err) {
       console.error('Profile save error:', err);

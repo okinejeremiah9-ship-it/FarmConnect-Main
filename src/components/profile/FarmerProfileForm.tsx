@@ -2,8 +2,7 @@
 // Purpose: Permanent completion profile form for farmers
 
 import React, { useState } from "react";
-import { User, MapPin, Save, X, Plus } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { User, MapPin, X, Plus } from "lucide-react";
 
 interface FarmerProfileFormProps {
   user: any;
@@ -89,29 +88,27 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     e.preventDefault();
     setLoading(true);
 
+    const normalizedCrops = Array.isArray(formData.crop_types)
+      ? formData.crop_types.map((crop: string) => crop.trim()).filter(Boolean)
+      : [];
+
     const updateData = {
-      ...formData,
+      name: formData.name,
+      email: formData.email || null,
+      profile_pic: formData.profile_pic || null,
+      address: formData.address || null,
       latitude: formData.latitude ? parseFloat(formData.latitude) : null,
       longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+      farm_size: formData.farm_size || null,
+      crop_types: normalizedCrops.length > 0 ? normalizedCrops : null,
       num_workers: formData.num_workers
         ? parseInt(formData.num_workers as string)
         : null,
       profile_completed: true,
-      updated_at: new Date().toISOString(),
     };
 
     try {
-      // ✅ Update Supabase profile record
-      const { error } = await supabase
-        .from("profiles")
-        .update(updateData)
-        .eq("id", user.id);
-
-      if (error) throw error;
-
-      // ✅ Update local app user data
       await onSave(updateData);
-
       alert("✅ Profile saved successfully!");
     } catch (err) {
       console.error("Profile update error:", err);
