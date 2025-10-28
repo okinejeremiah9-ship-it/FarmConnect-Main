@@ -72,6 +72,12 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
     e.preventDefault();
     setLoading(true);
 
+    if (!formData.latitude || !formData.longitude) {
+      alert('Capture your current location so farmers nearby can discover your services.');
+      setLoading(false);
+      return;
+    }
+
     const normalizedCategories = Array.isArray(formData.service_categories)
       ? formData.service_categories.filter(Boolean)
       : [];

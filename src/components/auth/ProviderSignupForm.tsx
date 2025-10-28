@@ -44,6 +44,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [capturingLocation, setCapturingLocation] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<string | null>(null);
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
 
   const normalizePhoneNumber = (phone: string): string => {
     const digitsOnly = phone.replace(/\D/g, '');
@@ -71,6 +74,32 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
       ...prev,
       [name]: value,
     }));
+  };
+
+  const handleCaptureLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Geolocation is not supported in this browser. Please update your profile from a GPS-enabled device.');
+      return;
+    }
+
+    setError('');
+    setCapturingLocation(true);
+    setLocationStatus('Capturing your current location…');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setCoordinates({ lat: latitude, lng: longitude });
+        setLocationStatus(`Location captured: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+        setCapturingLocation(false);
+      },
+      (geoError) => {
+        console.error('Provider signup geolocation error:', geoError);
+        setCapturingLocation(false);
+        setLocationStatus('Unable to capture your GPS position. Please allow location access and try again.');
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -127,6 +156,11 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
       return;
     }
 
+    if (!coordinates) {
+      setError('Capture your business location so farmers nearby can discover you.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -143,6 +177,8 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
           phone: normalizedPhone,
           password: formData.password,
           address: formData.address || null,
+          latitude: coordinates.lat,
+          longitude: coordinates.lng,
           business_name: formData.businessName,
           contact_person: formData.contactPerson,
           service_categories: serviceCategories,
@@ -276,6 +312,29 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-medium text-blue-900">Service discovery location *</p>
+              <p className="text-sm text-blue-700">
+                {coordinates
+                  ? locationStatus
+                  : locationStatus ||
+                    'Capture your current location so farmers within range can see your services in the marketplace.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCaptureLocation}
+              disabled={capturingLocation}
+              className={`inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium text-white transition ${
+                capturingLocation ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              <MapPin className="w-4 h-4 mr-2" />
+              {capturingLocation ? 'Capturing…' : coordinates ? 'Retake location' : 'Capture location'}
+            </button>
           </div>
 
           <div>
