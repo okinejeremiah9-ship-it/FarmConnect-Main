@@ -32,7 +32,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ✅ Real-time messages
-  const { messages, loading } = useRealtimeMessages(service.providerId, userId);
+  const { messages, loading } = useRealtimeMessages(userId, service.providerId, null);
 
   useEffect(() => {
     scrollToBottom();

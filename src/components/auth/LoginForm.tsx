@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Phone, Lock, Loader } from 'lucide-react';
+import {
+  normalizeGhanaPhoneNumber,
+  isValidGhanaPhoneNumber,
+} from '../../utils/phone';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -15,37 +19,17 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Helper function to normalize phone number format
-  const normalizePhoneNumber = (phone: string): string => {
-    // Remove all non-digit characters
-    const digitsOnly = phone.replace(/\D/g, '');
-    
-    // If starts with 0, replace with +233
-    if (digitsOnly.startsWith('0')) {
-      return '+233' + digitsOnly.substring(1);
-    }
-    
-    // If starts with 233, add +
-    if (digitsOnly.startsWith('233')) {
-      return '+' + digitsOnly;
-    }
-    
-    // If already has +233, return as is
-    if (phone.startsWith('+233')) {
-      return phone;
-    }
-    
-    // Default: assume it's a local number and add +233
-    return '+233' + digitsOnly;
-  };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      // Normalize phone number
-      const normalizedPhone = normalizePhoneNumber(formData.phone);
+      if (!isValidGhanaPhoneNumber(formData.phone)) {
+        throw new Error('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
+      }
+
+      const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
       
       // Call login API
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`, {

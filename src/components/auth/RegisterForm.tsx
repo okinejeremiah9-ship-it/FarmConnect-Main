@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { User, Mail, Phone, Lock, Eye, EyeOff, Loader } from 'lucide-react';
+import {
+  normalizeGhanaPhoneNumber,
+  isValidGhanaPhoneNumber,
+} from '../../utils/phone';
 
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
@@ -38,10 +42,16 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
     }
 
     try {
+      if (!isValidGhanaPhoneNumber(formData.phone)) {
+        throw new Error('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
+      }
+
+      const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
+
       await register({
         name: formData.name,
         email: formData.email,
-        phone: formData.phone,
+        phone: normalizedPhone,
         password: formData.password,
         role: formData.role,
       });
