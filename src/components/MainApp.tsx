@@ -107,6 +107,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 
       await onUserUpdate(result.user);
       setShowProfileSetup(false);
+      return result.user;
     } catch (error) {
       console.error("Profile update error:", error);
       throw error instanceof Error ? error : new Error("Failed to update profile");
