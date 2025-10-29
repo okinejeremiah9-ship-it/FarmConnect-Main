@@ -53,10 +53,10 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 
       try {
         const { data, error } = await supabase
-          .from("profiles")
+          .from("users")
           .select("profile_completed")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
         setShowProfileSetup(!data?.profile_completed);
