@@ -51,7 +51,17 @@ export const escrowAPI = {
 
 export const disputeAPI = {
   getAll: async (adminId: string) => {
-    return fetchAPI(`disputes-list?admin_id=${adminId}`);
+    return fetchAPI('disputes-list', {
+      method: 'POST',
+      body: JSON.stringify({ admin_id: adminId }),
+    });
+  },
+
+  listForUser: async (userId: string) => {
+    return fetchAPI('disputes-list', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
+    });
   },
 
   resolve: async (disputeId: string, adminId: string, resolution: string, action: string) => {
@@ -108,7 +118,19 @@ export const bookingAPI = {
 };
 
 export const mapAPI = {
-  getNearbyServices: async (lat: number, lng: number, radius: number, category?: string) => {
+  getNearbyServices: async ({
+    lat,
+    lng,
+    radius,
+    category,
+    minRating,
+  }: {
+    lat: number;
+    lng: number;
+    radius: number;
+    category?: string;
+    minRating?: number;
+  }) => {
     const params = new URLSearchParams({
       lat: lat.toString(),
       lng: lng.toString(),
@@ -117,6 +139,10 @@ export const mapAPI = {
 
     if (category) {
       params.append('category', category);
+    }
+
+    if (typeof minRating === 'number') {
+      params.append('min_rating', minRating.toString());
     }
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
