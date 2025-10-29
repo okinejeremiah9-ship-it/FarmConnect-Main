@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
       // Farmer fields
       'farm_size', 'crop_types', 'num_workers',
       // Provider fields
-      'business_name', 'contact_person', 'service_categories',
+      'business_name', 'contact_person', 'service_categories', 'services_offered',
       'service_description', 'service_availability', 'pricing_info',
       'equipment_list', 'years_experience',
       // Profile completion

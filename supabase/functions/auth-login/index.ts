@@ -41,6 +41,20 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function normalizeArrayField(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item.trim() : String(item)))
+      .filter(item => item.length > 0);
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',').map(item => item.trim()).filter(item => item.length > 0);
+  }
+
+  return [];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -76,7 +90,36 @@ serve(async (req) => {
     // Find user by phone
     const { data: user, error: userError } = await supabaseClient
       .from('users')
-      .select('id, name, phone, role, password_hash, is_verified, created_at')
+      .select(`
+        id,
+        name,
+        phone,
+        role,
+        password_hash,
+        is_verified,
+        created_at,
+        updated_at,
+        email,
+        profile_pic,
+        bio,
+        address,
+        latitude,
+        longitude,
+        farm_size,
+        crop_types,
+        num_workers,
+        business_name,
+        contact_person,
+        service_categories,
+        service_description,
+        service_availability,
+        pricing_info,
+        equipment_list,
+        years_experience,
+        profile_completed,
+        rating,
+        total_reviews
+      `)
       .eq('phone', normalizedPhone)
       .single()
 
@@ -90,24 +133,25 @@ serve(async (req) => {
     }
 
     // Skip password verification if fetch_user_only is true
+    const passwordHash = user.password_hash
+
     if (!fetch_user_only) {
       // Hash provided password and compare
       const hashedPassword = await hashPassword(password);
-      
-      if (hashedPassword !== user.password_hash) {
+
+      if (hashedPassword !== passwordHash) {
         throw new Error('Incorrect password')
       }
     }
 
     // Return user data (excluding password hash)
+    const { password_hash, ...publicUser } = user
     const userData = {
-      id: user.id,
-      name: user.name,
-      phone: user.phone,
-      role: user.role,
-      is_verified: user.is_verified,
-      created_at: user.created_at,
-    };
+      ...publicUser,
+      crop_types: normalizeArrayField(user.crop_types),
+      service_categories: normalizeArrayField(user.service_categories),
+      equipment_list: normalizeArrayField(user.equipment_list),
+    }
 
     return new Response(
       JSON.stringify({
