@@ -1,6 +1,6 @@
 import React from 'react';
 import { ServiceFilters } from '../../types/marketplace';
-import { MapPin, Filter, DollarSign } from 'lucide-react';
+import { Filter, Ruler, Star } from 'lucide-react';
 
 interface ServiceFiltersProps {
   filters: ServiceFilters;
@@ -22,11 +22,6 @@ export const ServiceFiltersComponent: React.FC<ServiceFiltersProps> = ({
     onFiltersChange({});
   };
 
-  const districts = [
-    'Accra', 'Kumasi', 'Tamale', 'Sunyani', 'Bolgatanga', 'Ho', 'Koforidua',
-    'Cape Coast', 'Sekondi-Takoradi', 'Wa', 'Dambai', 'Goaso'
-  ];
-
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <div className="flex items-center justify-between mb-6">
@@ -43,7 +38,6 @@ export const ServiceFiltersComponent: React.FC<ServiceFiltersProps> = ({
       </div>
 
       <div className="space-y-6">
-        {/* Category Filter */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
             Service Category
@@ -71,83 +65,41 @@ export const ServiceFiltersComponent: React.FC<ServiceFiltersProps> = ({
           </div>
         </div>
 
-        {/* Location Filter */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
-            <MapPin className="w-4 h-4 inline mr-1" />
-            Location
+            <Ruler className="w-4 h-4 inline mr-1" />
+            Search Radius (km)
           </label>
           <select
-            value={filters.district || ''}
-            onChange={(e) => handleFilterChange('district', e.target.value || undefined)}
+            value={filters.radiusKm?.toString() || '50'}
+            onChange={(e) => handleFilterChange('radiusKm', parseInt(e.target.value, 10))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
           >
-            <option value="">All Districts</option>
-            {districts.map((district) => (
-              <option key={district} value={district}>
-                {district}
+            {[10, 25, 50, 100, 200].map((radius) => (
+              <option key={radius} value={radius}>
+                Within {radius} km
               </option>
             ))}
           </select>
         </div>
 
-        {/* Availability Filter */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
-            Availability
+            <Star className="w-4 h-4 inline mr-1" />
+            Minimum Rating
           </label>
-          <div className="space-y-2">
-            {[
-              { value: 'all', label: 'Any Time' },
-              { value: 'available', label: 'Available Now' },
-              { value: 'today', label: 'Available Today' },
-            ].map((option) => (
-              <label key={option.value} className="flex items-center">
-                <input
-                  type="radio"
-                  name="availability"
-                  value={option.value}
-                  checked={filters.availability === option.value || (!filters.availability && option.value === 'all')}
-                  onChange={(e) => handleFilterChange('availability', e.target.value === 'all' ? undefined : e.target.value)}
-                  className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300"
-                />
-                <span className="ml-2 text-sm text-gray-700">{option.label}</span>
-              </label>
-            ))}
-          </div>
+          <select
+            value={filters.minRating?.toString() || '0'}
+            onChange={(e) => handleFilterChange('minRating', parseFloat(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          >
+            <option value="0">Any rating</option>
+            <option value="3">3 stars & up</option>
+            <option value="4">4 stars & up</option>
+            <option value="4.5">4.5 stars & up</option>
+          </select>
         </div>
 
-        {/* Price Range Filter */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">
-            <DollarSign className="w-4 h-4 inline mr-1" />
-            Price Range (₵)
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              placeholder="Min"
-              value={filters.priceRange?.min || ''}
-              onChange={(e) => handleFilterChange('priceRange', {
-                ...filters.priceRange,
-                min: e.target.value ? parseInt(e.target.value) : undefined
-              })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            />
-            <input
-              type="number"
-              placeholder="Max"
-              value={filters.priceRange?.max || ''}
-              onChange={(e) => handleFilterChange('priceRange', {
-                ...filters.priceRange,
-                max: e.target.value ? parseInt(e.target.value) : undefined
-              })}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-
-        {/* Quick Filters */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-3">
             Quick Filters
@@ -160,16 +112,16 @@ export const ServiceFiltersComponent: React.FC<ServiceFiltersProps> = ({
               Tractors
             </button>
             <button
-              onClick={() => handleFilterChange('availability', 'today')}
+              onClick={() => handleFilterChange('radiusKm', 25)}
               className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm hover:bg-blue-200 transition-colors"
             >
-              Today
+              Within 25 km
             </button>
             <button
-              onClick={() => handleFilterChange('category', 'extension')}
+              onClick={() => handleFilterChange('minRating', 4.5)}
               className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm hover:bg-purple-200 transition-colors"
             >
-              Advisory
+              4.5★ & up
             </button>
           </div>
         </div>

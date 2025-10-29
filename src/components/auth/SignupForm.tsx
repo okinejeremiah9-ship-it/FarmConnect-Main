@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { User, Phone, Lock, Eye, EyeOff, Loader, UserCheck } from 'lucide-react';
+import {
+  normalizeGhanaPhoneNumber,
+  isValidGhanaPhoneNumber,
+} from '../../utils/phone';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -30,53 +34,27 @@ export const SignupForm: React.FC<SignupFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
-
-    // Helper function to normalize phone number format
-    const normalizePhoneNumber = (phone: string): string => {
-      // Remove all non-digit characters
-      const digitsOnly = phone.replace(/\D/g, '');
-      
-      // If starts with 0, replace with +233
-      if (digitsOnly.startsWith('0')) {
-        return '+233' + digitsOnly.substring(1);
-      }
-      
-      // If starts with 233, add +
-      if (digitsOnly.startsWith('233')) {
-        return '+' + digitsOnly;
-      }
-      
-      // If already has +233, return as is
-      if (phone.startsWith('+233')) {
-        return phone;
-      }
-      
-      // Default: assume it's a local number and add +233
-      return '+233' + digitsOnly;
-    };
 
     // Validation
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
-      setLoading(false);
       return;
     }
 
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters');
-      setLoading(false);
       return;
     }
 
-    const normalizedPhone = normalizePhoneNumber(formData.phone);
-    if (!normalizedPhone.match(/^\+233\d{9}$/)) {
+    if (!isValidGhanaPhoneNumber(formData.phone)) {
       setError('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
-      setLoading(false);
       return;
     }
+
+    setLoading(true);
 
     try {
+      const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`, {
         method: 'POST',
         headers: {

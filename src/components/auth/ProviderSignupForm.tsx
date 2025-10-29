@@ -15,6 +15,11 @@ import {
   Loader,
   ArrowLeft,
 } from 'lucide-react';
+import {
+  normalizeGhanaPhoneNumber,
+  isValidGhanaPhoneNumber,
+} from '../../utils/phone';
+import { useGeolocationCapture } from '../../hooks/useGeolocationCapture';
 
 interface ProviderSignupFormProps {
   onSwitchToLogin: () => void;
@@ -33,8 +38,6 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
     email: '',
     phone: '',
     address: '',
-    latitude: '',
-    longitude: '',
     serviceCategories: '',
     serviceDescription: '',
     pricingInfo: '',
@@ -42,28 +45,25 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
     password: '',
     confirmPassword: '',
   });
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const normalizePhoneNumber = (phone: string): string => {
-    const digitsOnly = phone.replace(/\D/g, '');
+  const {
+    coordinates,
+    status: locationStatus,
+    error: locationError,
+    isCapturing,
+    captureLocation,
+  } = useGeolocationCapture();
 
-    if (digitsOnly.startsWith('0')) {
-      return '+233' + digitsOnly.substring(1);
-    }
-
-    if (digitsOnly.startsWith('233')) {
-      return '+' + digitsOnly;
-    }
-
-    if (phone.startsWith('+233')) {
-      return phone;
-    }
-
-    return '+233' + digitsOnly;
-  };
+  const locationMessage = (() => {
+    if (coordinates && locationStatus) return locationStatus;
+    if (locationStatus && locationStatus.trim().length > 0) return locationStatus;
+    return 'Capture your current location so farmers within range can see your services in the marketplace.';
+  })();
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -109,65 +109,63 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
       return;
     }
 
-    const normalizedPhone = normalizePhoneNumber(formData.phone);
-    if (!normalizedPhone.match(/^\+233\d{9}$/)) {
+    if (!isValidGhanaPhoneNumber(formData.phone)) {
       setError('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
       return;
     }
+
+    const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
 
     const serviceCategories = formData.serviceCategories
       .split(',')
       .map((category) => category.trim())
       .filter(Boolean);
 
-    const yearsExperience = formData.yearsExperience
-      ? parseInt(formData.yearsExperience, 10)
-      : null;
-
-    if (Number.isNaN(yearsExperience!)) {
-      setError('Years of experience must be a valid number');
-      return;
+    let yearsExperience: number | null = null;
+    if (formData.yearsExperience.trim()) {
+      const parsedExperience = parseInt(formData.yearsExperience, 10);
+      if (Number.isNaN(parsedExperience)) {
+        setError('Years of experience must be a valid number');
+        return;
+      }
+      yearsExperience = parsedExperience;
     }
 
-    const latitude = formData.latitude ? parseFloat(formData.latitude) : null;
-    if (formData.latitude && Number.isNaN(latitude!)) {
-      setError('Latitude must be a valid number');
-      return;
-    }
-
-    const longitude = formData.longitude ? parseFloat(formData.longitude) : null;
-    if (formData.longitude && Number.isNaN(longitude!)) {
-      setError('Longitude must be a valid number');
+    if (!coordinates) {
+      setError('Capture your business location so farmers nearby can discover you.');
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          role: 'provider',
-          name: formData.contactPerson,
-          email: formData.email || null,
-          phone: normalizedPhone,
-          password: formData.password,
-          address: formData.address || null,
-          latitude,
-          longitude,
-          business_name: formData.businessName,
-          contact_person: formData.contactPerson,
-          service_categories: serviceCategories,
-          service_description: formData.serviceDescription,
-          pricing_info: formData.pricingInfo || null,
-          years_experience: yearsExperience,
-          profile_completed: true,
-        }),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            role: 'provider',
+            name: formData.contactPerson,
+            email: formData.email || null,
+            phone: normalizedPhone,
+            password: formData.password,
+            address: formData.address || null,
+            latitude: coordinates.latitude,
+            longitude: coordinates.longitude,
+            business_name: formData.businessName,
+            contact_person: formData.contactPerson,
+            service_categories: serviceCategories,
+            service_description: formData.serviceDescription,
+            pricing_info: formData.pricingInfo || null,
+            years_experience: yearsExperience,
+            profile_completed: true,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -200,9 +198,12 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 mb-4">
             Provider onboarding
           </span>
-          <h2 className="text-3xl font-bold text-gray-900">Tell farmers about your services</h2>
+          <h2 className="text-3xl font-bold text-gray-900">
+            Tell farmers about your services
+          </h2>
           <p className="text-gray-600 mt-2">
-            Share your business details so farmers can trust and book you with confidence.
+            Share your business details so farmers can trust and book you with
+            confidence.
           </p>
         </div>
 
@@ -215,7 +216,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Business Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Business Name *
+              </label>
               <div className="relative">
                 <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -230,7 +233,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Contact Person *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Contact Person *
+              </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -248,7 +253,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email (optional)
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -262,7 +269,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number *
+              </label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -275,12 +284,16 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Ghana phone numbers only</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Ghana phone numbers only
+              </p>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Business Location</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Business Location
+            </label>
             <div className="relative">
               <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
@@ -294,33 +307,44 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
             </div>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          {/* Location Capture */}
+          <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Latitude (optional)</label>
-              <input
-                type="text"
-                name="latitude"
-                value={formData.latitude}
-                onChange={handleChange}
-                placeholder="5.6037"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+              <p className="text-sm font-medium text-blue-900">
+                Service discovery location *
+              </p>
+              <p className="text-sm text-blue-700">{locationMessage}</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Longitude (optional)</label>
-              <input
-                type="text"
-                name="longitude"
-                value={formData.longitude}
-                onChange={handleChange}
-                placeholder="-0.1870"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                captureLocation();
+              }}
+              disabled={isCapturing}
+              className={`inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium text-white transition ${
+                isCapturing
+                  ? 'bg-blue-300 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
+            >
+              <MapPin className="w-4 h-4 mr-2" />
+              {isCapturing
+                ? 'Capturing…'
+                : coordinates
+                ? 'Retake location'
+                : 'Capture location'}
+            </button>
           </div>
+          {locationError && (
+            <p className="text-sm text-red-600">{locationError}</p>
+          )}
 
+          {/* Remaining Fields */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Service Categories *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Service Categories *
+            </label>
             <div className="relative">
               <Tags className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
@@ -333,11 +357,15 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">Separate multiple categories with commas</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Separate multiple categories with commas
+            </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Service Description *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Service Description *
+            </label>
             <div className="relative">
               <ClipboardList className="absolute left-3 top-3 text-gray-400 h-5 w-5" />
               <textarea
@@ -354,7 +382,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Pricing Information</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Pricing Information
+              </label>
               <div className="relative">
                 <Wallet className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -368,7 +398,9 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Years of Experience</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Years of Experience
+              </label>
               <div className="relative">
                 <Briefcase className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -384,9 +416,12 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
             </div>
           </div>
 
+          {/* Password Fields */}
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password *
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -403,12 +438,18 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                   onClick={() => setShowPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Confirm Password *
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -425,7 +466,11 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                   onClick={() => setShowConfirmPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                 >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -438,7 +483,8 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
           >
             {loading ? (
               <>
-                <Loader className="w-5 h-5 mr-2 animate-spin" /> Creating your provider account...
+                <Loader className="w-5 h-5 mr-2 animate-spin" /> Creating your
+                provider account...
               </>
             ) : (
               'Create provider account'
@@ -460,3 +506,4 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
     </div>
   );
 };
+

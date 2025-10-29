@@ -87,22 +87,29 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   // ✅ Update profile and mark completed
   const handleProfileUpdate = async (data: any) => {
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          ...data,
-          profile_completed: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id);
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ...data, user_id: user.id }),
+        }
+      );
 
-      if (error) throw error;
+      const result = await response.json();
 
-      onUserUpdate({ ...user, ...data, profile_completed: true });
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Failed to update profile");
+      }
+
+      onUserUpdate(result.user);
       setShowProfileSetup(false);
     } catch (error) {
       console.error("Profile update error:", error);
-      throw error;
+      throw error instanceof Error ? error : new Error("Failed to update profile");
     }
   };
 

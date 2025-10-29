@@ -27,7 +27,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
 
-  const totalPrice = service.price * bookingData.duration;
+  const unitPrice = service.price ?? 0;
+  const totalPrice = unitPrice * bookingData.duration;
 
   const handleInputChange = (field: string, value: any) => {
     setBookingData(prev => ({
@@ -116,10 +117,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="bg-gray-50 rounded-lg p-4">
                 <h3 className="font-semibold text-gray-900 mb-2">{service.title}</h3>
                 <p className="text-gray-600 mb-2">by {service.providerName}</p>
-                <div className="flex items-center text-gray-700">
-                  <DollarSign className="w-4 h-4 mr-1" />
-                  <span>₵{service.price} per {service.priceUnit}</span>
-                </div>
+                {service.price ? (
+                  <div className="flex items-center text-gray-700">
+                    <DollarSign className="w-4 h-4 mr-1" />
+                    <span>₵{service.price} per {service.priceUnit ?? 'session'}</span>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-600">{service.pricingInfo || 'Contact provider to confirm pricing.'}</p>
+                )}
               </div>
 
               {/* Date Selection */}
@@ -154,23 +159,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {/* Duration */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Duration ({service.priceUnit}s)
-                </label>
-                <select
-                  value={bookingData.duration}
-                  onChange={(e) => handleInputChange('duration', parseInt(e.target.value))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                >
-                  {[1, 2, 3, 4, 5, 6, 7].map(num => (
-                    <option key={num} value={num}>
-                      {num} {service.priceUnit}{num > 1 ? 's' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {service.price && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Duration ({service.priceUnit ?? 'session'}s)
+                  </label>
+                  <select
+                    value={bookingData.duration}
+                    onChange={(e) => handleInputChange('duration', parseInt(e.target.value))}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    required
+                  >
+                    {[1, 2, 3, 4, 5, 6, 7].map(num => (
+                      <option key={num} value={num}>
+                        {num} {service.priceUnit ?? 'session'}{num > 1 ? 's' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Location */}
               <div>
@@ -203,16 +210,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {/* Price Summary */}
-              <div className="bg-green-50 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Service Cost:</span>
-                  <span className="text-gray-900">₵{service.price} × {bookingData.duration}</span>
+              {service.price ? (
+                <div className="bg-green-50 rounded-lg p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-gray-700">Service Cost:</span>
+                    <span className="text-gray-900">₵{service.price} × {bookingData.duration}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-lg font-semibold">
+                    <span className="text-gray-900">Total:</span>
+                    <span className="text-green-600">₵{totalPrice}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-lg font-semibold">
-                  <span className="text-gray-900">Total:</span>
-                  <span className="text-green-600">₵{totalPrice}</span>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <p className="text-sm text-yellow-800">
+                    This provider has not shared standard pricing. Please contact them directly to confirm rates before booking.
+                  </p>
                 </div>
-              </div>
+              )}
 
               {/* Submit Button */}
               <button
@@ -248,7 +263,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Duration:</span>
-                    <span className="text-gray-900">{bookingData.duration} {service.priceUnit}(s)</span>
+                    <span className="text-gray-900">{bookingData.duration} {service.priceUnit ?? 'session'}(s)</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Location:</span>

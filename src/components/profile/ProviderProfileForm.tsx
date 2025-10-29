@@ -3,7 +3,6 @@
 
 import React, { useState } from 'react';
 import { MapPin, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
 
 interface ProviderProfileFormProps {
   user: any;
@@ -73,26 +72,35 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
     e.preventDefault();
     setLoading(true);
 
+    if (!formData.latitude || !formData.longitude) {
+      alert('Capture your current location so farmers nearby can discover your services.');
+      setLoading(false);
+      return;
+    }
+
+    const normalizedCategories = Array.isArray(formData.service_categories)
+      ? formData.service_categories.filter(Boolean)
+      : [];
+
     const updateData = {
-      ...formData,
+      business_name: formData.business_name,
+      contact_person: formData.contact_person,
       name: formData.contact_person,
+      email: formData.email || null,
+      address: formData.address || null,
       latitude: formData.latitude ? parseFloat(formData.latitude) : null,
       longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+      service_categories: normalizedCategories.length > 0 ? normalizedCategories : null,
+      service_description: formData.service_description || null,
+      pricing_info: formData.pricing_info || null,
       years_experience: formData.years_experience
         ? parseInt(formData.years_experience as string)
         : null,
       profile_completed: true,
-      updated_at: new Date().toISOString(),
     };
 
     try {
-      // ✅ Update provider record in Supabase
-      const { error } = await supabase.from('profiles').update(updateData).eq('id', user.id);
-      if (error) throw error;
-
-      // ✅ Update parent state (MainApp)
       await onSave(updateData);
-
       alert('✅ Profile saved successfully!');
     } catch (err) {
       console.error('Profile save error:', err);
@@ -185,36 +193,24 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
           />
         </div>
 
-        {/* GPS Section */}
-        <div className="grid md:grid-cols-3 gap-4">
+        {/* Location capture */}
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Latitude</label>
-            <input
-              type="text"
-              value={formData.latitude}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-            />
+            <p className="text-sm font-medium text-blue-900">Service location</p>
+            <p className="text-sm text-blue-700">
+              {formData.latitude && formData.longitude
+                ? `Location captured: ${Number.parseFloat(formData.latitude).toFixed(4)}, ${Number.parseFloat(formData.longitude).toFixed(4)}`
+                : 'Capture your current location so farmers nearby can discover your services.'}
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Longitude</label>
-            <input
-              type="text"
-              value={formData.longitude}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={getCurrentLocation}
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center"
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              Get Location
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={getCurrentLocation}
+            className="inline-flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            <MapPin className="w-4 h-4 mr-2" />
+            Capture location
+          </button>
         </div>
 
         {/* Submit */}

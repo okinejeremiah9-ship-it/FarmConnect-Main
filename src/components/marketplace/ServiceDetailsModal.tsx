@@ -1,19 +1,19 @@
 import React from 'react';
 import { ServiceListing } from '../../types/marketplace';
-import { 
-  X, 
-  Star, 
-  MapPin, 
-  DollarSign, 
-  Calendar, 
-  Clock,
+import {
+  X,
+  Star,
+  MapPin,
+  DollarSign,
+  Calendar,
   Tractor,
   Wrench,
   Users,
   BookOpen,
   Phone,
   Mail,
-  MessageSquare
+  MessageSquare,
+  Ruler
 } from 'lucide-react';
 
 interface ServiceDetailsModalProps {
@@ -50,7 +50,7 @@ export const ServiceDetailsModal: React.FC<ServiceDetailsModalProps> = ({
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-200">
           <div className="flex items-center space-x-3">
-            {getCategoryIcon(service.category)}
+            {service.category ? getCategoryIcon(service.category) : <Tractor className="w-6 h-6 text-gray-600" />}
             <div>
               <h2 className="text-2xl font-bold text-gray-900">{service.title}</h2>
               <p className="text-gray-600">{service.providerName}</p>
@@ -78,7 +78,7 @@ export const ServiceDetailsModal: React.FC<ServiceDetailsModalProps> = ({
                   />
                 ) : (
                   <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center">
-                    {getCategoryIcon(service.category)}
+                    {service.category ? getCategoryIcon(service.category) : <Tractor className="w-10 h-10 text-gray-500" />}
                   </div>
                 )}
               </div>
@@ -86,17 +86,15 @@ export const ServiceDetailsModal: React.FC<ServiceDetailsModalProps> = ({
               {/* Description */}
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3">Description</h3>
-                <p className="text-gray-700 leading-relaxed">{service.description}</p>
+                <p className="text-gray-700 leading-relaxed">{service.description || 'No detailed description provided yet.'}</p>
               </div>
 
-              {/* Equipment/Specializations */}
-              {(service.equipment || service.specializations) && (
+              {/* Specializations */}
+              {service.specializations && service.specializations.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                    {service.equipment ? 'Equipment' : 'Specializations'}
-                  </h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">Specializations</h3>
                   <div className="flex flex-wrap gap-2">
-                    {(service.equipment || service.specializations)?.map((item, index) => (
+                    {service.specializations.map((item, index) => (
                       <span
                         key={index}
                         className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
@@ -114,28 +112,42 @@ export const ServiceDetailsModal: React.FC<ServiceDetailsModalProps> = ({
               {/* Provider Info */}
               <div className="bg-gray-50 rounded-lg p-6 mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Provider Information</h3>
-                
+
                 <div className="space-y-3">
-                  <div className="flex items-center">
-                    <Star className="w-5 h-5 text-yellow-400 fill-current mr-2" />
-                    <span className="font-medium text-gray-900">{service.providerRating}</span>
-                    <span className="text-gray-600 ml-2">(24 reviews)</span>
-                  </div>
-                  
-                  <div className="flex items-center text-gray-700">
-                    <MapPin className="w-5 h-5 mr-2" />
-                    <span>{service.location}</span>
-                  </div>
-                  
-                  <div className="flex items-center text-gray-700">
-                    <Phone className="w-5 h-5 mr-2" />
-                    <span>+233 123 456 789</span>
-                  </div>
-                  
-                  <div className="flex items-center text-gray-700">
-                    <Mail className="w-5 h-5 mr-2" />
-                    <span>provider@farmconnect.com</span>
-                  </div>
+                  {(service.providerRating || service.providerRating === 0) && (
+                    <div className="flex items-center">
+                      <Star className="w-5 h-5 text-yellow-400 fill-current mr-2" />
+                      <span className="font-medium text-gray-900">{service.providerRating?.toFixed(1)}</span>
+                    </div>
+                  )}
+
+                  {service.distanceKm !== undefined && service.distanceKm !== null && (
+                    <div className="flex items-center text-gray-700">
+                      <Ruler className="w-5 h-5 mr-2" />
+                      <span>{service.distanceKm.toFixed(1)} km away</span>
+                    </div>
+                  )}
+
+                  {service.location && (
+                    <div className="flex items-center text-gray-700">
+                      <MapPin className="w-5 h-5 mr-2" />
+                      <span>{service.location}</span>
+                    </div>
+                  )}
+
+                  {service.phone && (
+                    <div className="flex items-center text-gray-700">
+                      <Phone className="w-5 h-5 mr-2" />
+                      <span>{service.phone}</span>
+                    </div>
+                  )}
+
+                  {service.email && (
+                    <div className="flex items-center text-gray-700">
+                      <Mail className="w-5 h-5 mr-2" />
+                      <span>{service.email}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -144,37 +156,36 @@ export const ServiceDetailsModal: React.FC<ServiceDetailsModalProps> = ({
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Pricing</h3>
                 <div className="flex items-center">
                   <DollarSign className="w-6 h-6 text-green-600 mr-2" />
-                  <span className="text-3xl font-bold text-green-600">₵{service.price}</span>
-                  <span className="text-gray-600 ml-2">per {service.priceUnit}</span>
+                  {service.price ? (
+                    <span className="text-3xl font-bold text-green-600">₵{service.price}</span>
+                  ) : (
+                    <span className="text-lg text-gray-700">{service.pricingInfo || 'Contact provider for pricing details'}</span>
+                  )}
+                  {service.price && (
+                    <span className="text-gray-600 ml-2">per {service.priceUnit ?? 'session'}</span>
+                  )}
                 </div>
               </div>
 
-              {/* Availability */}
-              <div className="bg-blue-50 rounded-lg p-6 mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Availability</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <Clock className="w-5 h-5 text-blue-600 mr-2" />
-                    <span className="text-gray-700">
-                      Status: <span className="font-medium text-blue-600">
-                        {service.availability.charAt(0).toUpperCase() + service.availability.slice(1)}
+              {service.availableDates && service.availableDates.length > 0 && (
+                <div className="bg-blue-50 rounded-lg p-6 mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Availability</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center">
+                      <Calendar className="w-5 h-5 text-blue-600 mr-2" />
+                      <span className="text-gray-700">
+                        Next available: {new Date(service.availableDates[0]).toLocaleDateString()}
                       </span>
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <Calendar className="w-5 h-5 text-blue-600 mr-2" />
-                    <span className="text-gray-700">
-                      Next available: {new Date(service.availableDates[0]).toLocaleDateString()}
-                    </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Action Buttons */}
               <div className="space-y-3">
                 <button
                   onClick={onBookService}
-                  disabled={service.availability !== 'available'}
+                  disabled={service.price === null || service.price === undefined}
                   className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
                 >
                   <Calendar className="w-5 h-5 mr-2" />

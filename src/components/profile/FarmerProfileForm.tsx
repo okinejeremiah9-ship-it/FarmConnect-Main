@@ -2,8 +2,7 @@
 // Purpose: Permanent completion profile form for farmers
 
 import React, { useState } from "react";
-import { User, MapPin, Save, X, Plus } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { User, MapPin, X, Plus } from "lucide-react";
 
 interface FarmerProfileFormProps {
   user: any;
@@ -89,29 +88,27 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     e.preventDefault();
     setLoading(true);
 
+    const normalizedCrops = Array.isArray(formData.crop_types)
+      ? formData.crop_types.map((crop: string) => crop.trim()).filter(Boolean)
+      : [];
+
     const updateData = {
-      ...formData,
+      name: formData.name,
+      email: formData.email || null,
+      profile_pic: formData.profile_pic || null,
+      address: formData.address || null,
       latitude: formData.latitude ? parseFloat(formData.latitude) : null,
       longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+      farm_size: formData.farm_size || null,
+      crop_types: normalizedCrops.length > 0 ? normalizedCrops : null,
       num_workers: formData.num_workers
         ? parseInt(formData.num_workers as string)
         : null,
       profile_completed: true,
-      updated_at: new Date().toISOString(),
     };
 
     try {
-      // ✅ Update Supabase profile record
-      const { error } = await supabase
-        .from("profiles")
-        .update(updateData)
-        .eq("id", user.id);
-
-      if (error) throw error;
-
-      // ✅ Update local app user data
       await onSave(updateData);
-
       alert("✅ Profile saved successfully!");
     } catch (err) {
       console.error("Profile update error:", err);
@@ -229,40 +226,24 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
           />
         </div>
 
-        {/* GPS Coordinates */}
-        <div className="grid md:grid-cols-3 gap-4">
+        {/* Location capture */}
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Latitude
-            </label>
-            <input
-              type="text"
-              value={formData.latitude}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-            />
+            <p className="text-sm font-medium text-blue-900">Farm location</p>
+            <p className="text-sm text-blue-700">
+              {formData.latitude && formData.longitude
+                ? `Location captured: ${Number.parseFloat(formData.latitude).toFixed(4)}, ${Number.parseFloat(formData.longitude).toFixed(4)}`
+                : 'We will automatically capture your GPS coordinates when you click capture location so nearby services can find you.'}
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Longitude
-            </label>
-            <input
-              type="text"
-              value={formData.longitude}
-              readOnly
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={getCurrentLocation}
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center"
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              Get Location
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={getCurrentLocation}
+            className="inline-flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            <MapPin className="w-4 h-4 mr-2" />
+            Capture location
+          </button>
         </div>
 
         {/* Farm Size */}

@@ -13,6 +13,10 @@ import {
   Loader,
   ArrowLeft,
 } from 'lucide-react';
+import {
+  normalizeGhanaPhoneNumber,
+  isValidGhanaPhoneNumber,
+} from '../../utils/phone';
 
 interface FarmerSignupFormProps {
   onSwitchToLogin: () => void;
@@ -30,8 +34,6 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
     email: '',
     phone: '',
     address: '',
-    latitude: '',
-    longitude: '',
     farmSize: '',
     cropTypes: '',
     numWorkers: '',
@@ -42,24 +44,6 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const normalizePhoneNumber = (phone: string): string => {
-    const digitsOnly = phone.replace(/\D/g, '');
-
-    if (digitsOnly.startsWith('0')) {
-      return '+233' + digitsOnly.substring(1);
-    }
-
-    if (digitsOnly.startsWith('233')) {
-      return '+' + digitsOnly;
-    }
-
-    if (phone.startsWith('+233')) {
-      return phone;
-    }
-
-    return '+233' + digitsOnly;
-  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -95,62 +79,53 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
       return;
     }
 
-    const normalizedPhone = normalizePhoneNumber(formData.phone);
-    if (!normalizedPhone.match(/^\+233\d{9}$/)) {
+    if (!isValidGhanaPhoneNumber(formData.phone)) {
       setError('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
       return;
     }
+
+    const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
 
     const cropTypes = formData.cropTypes
       .split(',')
       .map((crop) => crop.trim())
       .filter(Boolean);
 
-    const numWorkers = formData.numWorkers
-      ? parseInt(formData.numWorkers, 10)
-      : null;
-
-    if (Number.isNaN(numWorkers!)) {
-      setError('Number of workers must be a valid number');
-      return;
-    }
-
-    const latitude = formData.latitude ? parseFloat(formData.latitude) : null;
-    if (formData.latitude && Number.isNaN(latitude!)) {
-      setError('Latitude must be a valid number');
-      return;
-    }
-
-    const longitude = formData.longitude ? parseFloat(formData.longitude) : null;
-    if (formData.longitude && Number.isNaN(longitude!)) {
-      setError('Longitude must be a valid number');
-      return;
+    let numWorkers: number | null = null;
+    if (formData.numWorkers.trim()) {
+      const parsedWorkers = parseInt(formData.numWorkers, 10);
+      if (Number.isNaN(parsedWorkers)) {
+        setError('Number of workers must be a valid number');
+        return;
+      }
+      numWorkers = parsedWorkers;
     }
 
     setLoading(true);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          role: 'farmer',
-          name: formData.name,
-          email: formData.email || null,
-          phone: normalizedPhone,
-          password: formData.password,
-          address: formData.address || null,
-          latitude,
-          longitude,
-          farm_size: formData.farmSize,
-          crop_types: cropTypes,
-          num_workers: numWorkers,
-          profile_completed: true,
-        }),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            role: 'farmer',
+            name: formData.name,
+            email: formData.email || null,
+            phone: normalizedPhone,
+            password: formData.password,
+            address: formData.address || null,
+            farm_size: formData.farmSize,
+            crop_types: cropTypes,
+            num_workers: numWorkers,
+            profile_completed: true,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -179,13 +154,17 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
             Choose a different account type
           </button>
         </div>
+
         <div className="text-center mb-8">
           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700 mb-4">
             Farmer account setup
           </span>
-          <h2 className="text-3xl font-bold text-gray-900">Tell us about your farm</h2>
+          <h2 className="text-3xl font-bold text-gray-900">
+            Tell us about your farm
+          </h2>
           <p className="text-gray-600 mt-2">
-            We use this information to match you with the best service providers in your area.
+            We use this information to match you with the best service providers
+            in your area.
           </p>
         </div>
 
@@ -198,7 +177,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Full Name *
+              </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -213,7 +194,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email (optional)
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -230,7 +213,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number *
+              </label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -243,10 +228,14 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Ghana phone numbers only</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Ghana phone numbers only
+              </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Farm Location</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Farm Location
+              </label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -263,32 +252,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Latitude (optional)</label>
-              <input
-                type="text"
-                name="latitude"
-                value={formData.latitude}
-                onChange={handleChange}
-                placeholder="5.6037"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Longitude (optional)</label>
-              <input
-                type="text"
-                name="longitude"
-                value={formData.longitude}
-                onChange={handleChange}
-                placeholder="-0.1870"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Farm Size & Type *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Farm Size & Type *
+              </label>
               <div className="relative">
                 <Sprout className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -303,7 +269,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Crop Types *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Crop Types *
+              </label>
               <div className="relative">
                 <Wheat className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -316,12 +284,16 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Separate multiple crops with commas</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Separate multiple crops with commas
+              </p>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Number of Workers</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Number of Workers
+            </label>
             <div className="relative">
               <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
@@ -338,7 +310,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password *
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -355,12 +329,18 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   onClick={() => setShowPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Confirm Password *
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -377,7 +357,11 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   onClick={() => setShowConfirmPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                 >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -390,7 +374,8 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
           >
             {loading ? (
               <>
-                <Loader className="w-5 h-5 mr-2 animate-spin" /> Creating your account...
+                <Loader className="w-5 h-5 mr-2 animate-spin" /> Creating your
+                account...
               </>
             ) : (
               'Create farmer account'
@@ -412,3 +397,7 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
     </div>
   );
 };
+
+export default FarmerSignupForm;
+
+

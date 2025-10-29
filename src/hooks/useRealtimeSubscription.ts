@@ -2,12 +2,55 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+const BOOKING_SELECT = `
+  *,
+  service:service_id(
+    id,
+    title,
+    category,
+    price_per_hour,
+    price_per_day,
+    cover_image
+  ),
+  farmer:farmer_id(
+    id,
+    name,
+    phone
+  ),
+  provider:provider_id(
+    id,
+    name,
+    phone
+  ),
+  escrow_wallet(
+    id,
+    amount,
+    status,
+    farmer_id,
+    provider_id,
+    booking_id,
+    created_at,
+    updated_at,
+    disputes(
+      id,
+      status,
+      reason,
+      created_at,
+      resolved_at
+    )
+  )
+`;
+
 /**
  * ✅ Realtime Chat Subscription
  * Works even if bookingId is optional.
  * Listens for both sender and receiver updates in real time.
  */
-export function useRealtimeMessages(bookingId: string | null, userId: string) {
+export function useRealtimeMessages(
+  userId: string,
+  otherUserId: string | null,
+  bookingId: string | null = null
+) {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,50 +58,78 @@ export function useRealtimeMessages(bookingId: string | null, userId: string) {
     let channel: RealtimeChannel;
 
     async function setupSubscription() {
-      if (!userId) return;
+      if (!userId || !otherUserId) return;
 
-      // ✅ Fetch initial chat history
-      const { data: initialMessages, error } = await supabase
+      let baseQuery = supabase
         .from('messages')
         .select(`
           *,
           sender:sender_id(id, name, profile_pic),
           receiver:receiver_id(id, name, profile_pic)
         `)
-        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+        .or(
+          `and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`
+        )
         .order('created_at', { ascending: true });
 
-      if (error) console.error('Error fetching messages:', error);
-      setMessages(initialMessages || []);
+      if (bookingId) {
+        baseQuery = baseQuery.eq('booking_id', bookingId);
+      }
+
+      const { data: initialMessages, error } = await baseQuery;
+
+      if (error) {
+        console.error('Error fetching messages:', error);
+      }
+
+      const filteredInitial = (initialMessages || []).filter((msg) =>
+        (msg.sender_id === userId && msg.receiver_id === otherUserId) ||
+        (msg.sender_id === otherUserId && msg.receiver_id === userId)
+      );
+
+      setMessages(filteredInitial);
       setLoading(false);
 
-      // ✅ Subscribe to any new inserts (for both sides)
       channel = supabase
-        .channel(`realtime:messages:${userId}`)
+        .channel(`realtime:messages:${userId}:${otherUserId}`)
         .on(
           'postgres_changes',
           {
-            event: 'INSERT',
+            event: '*',
             schema: 'public',
             table: 'messages',
           },
           (payload) => {
+            if (payload.eventType === 'DELETE') {
+              const removed = payload.old as any;
+              if (
+                removed &&
+                ((removed.sender_id === userId && removed.receiver_id === otherUserId) ||
+                  (removed.sender_id === otherUserId && removed.receiver_id === userId))
+              ) {
+                setMessages((prev) => prev.filter((msg) => msg.id !== removed.id));
+              }
+              return;
+            }
+
             const newMsg = payload.new;
-            // Show only relevant messages
             if (
-              newMsg.sender_id === userId ||
-              newMsg.receiver_id === userId ||
-              (bookingId && newMsg.booking_id === bookingId)
+              newMsg &&
+              ((newMsg.sender_id === userId && newMsg.receiver_id === otherUserId) ||
+                (newMsg.sender_id === otherUserId && newMsg.receiver_id === userId)) &&
+              (!bookingId || newMsg.booking_id === bookingId)
             ) {
-              setMessages((prev) => [...prev, newMsg]);
+              setMessages((prev) => {
+                if (payload.eventType === 'UPDATE') {
+                  return prev.map((msg) => (msg.id === newMsg.id ? newMsg : msg));
+                }
+
+                return [...prev, newMsg];
+              });
             }
           }
         )
-        .subscribe((status) => {
-          if (status === 'SUBSCRIBED') {
-            console.log('✅ Realtime chat connected');
-          }
-        });
+        .subscribe();
     }
 
     setupSubscription();
@@ -68,7 +139,7 @@ export function useRealtimeMessages(bookingId: string | null, userId: string) {
         supabase.removeChannel(channel);
       }
     };
-  }, [bookingId, userId]);
+  }, [bookingId, otherUserId, userId]);
 
   return { messages, loading };
 }
@@ -130,14 +201,35 @@ export function useRealtimeBookingUpdates(userId: string) {
   useEffect(() => {
     let channel: RealtimeChannel;
 
-    async function setupSubscription() {
-      const { data: initialBookings } = await supabase
+    async function fetchBookingById(id: string) {
+      const { data, error } = await supabase
         .from('bookings')
-        .select('*, service:service_id(title), farmer:farmer_id(name), provider:provider_id(name)')
+        .select(BOOKING_SELECT)
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Failed to load booking', error);
+        return null;
+      }
+
+      return data;
+    }
+
+    async function setupSubscription() {
+      const { data: initialBookings, error } = await supabase
+        .from('bookings')
+        .select(BOOKING_SELECT)
         .or(`farmer_id.eq.${userId},provider_id.eq.${userId}`)
         .order('created_at', { ascending: false });
 
-      setBookings(initialBookings || []);
+      if (error) {
+        console.error('Failed to load bookings', error);
+        setBookings([]);
+      } else {
+        setBookings(initialBookings || []);
+      }
+
       setLoading(false);
 
       channel = supabase
@@ -147,27 +239,38 @@ export function useRealtimeBookingUpdates(userId: string) {
           { event: '*', schema: 'public', table: 'bookings' },
           async (payload) => {
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const booking = payload.new;
-              if (booking.farmer_id === userId || booking.provider_id === userId) {
+              const bookingId = payload.new?.id;
+              if (!bookingId) return;
+
+              const fullBooking = await fetchBookingById(bookingId);
+              if (!fullBooking) return;
+
+              if (fullBooking.farmer_id === userId || fullBooking.provider_id === userId) {
                 setBookings((prev) => {
-                  const index = prev.findIndex((b) => b.id === booking.id);
+                  const index = prev.findIndex((b) => b.id === bookingId);
                   if (index >= 0) {
                     const updated = [...prev];
-                    updated[index] = booking;
+                    updated[index] = fullBooking;
                     return updated;
                   }
-                  return [booking, ...prev];
+                  return [fullBooking, ...prev];
                 });
               }
             } else if (payload.eventType === 'DELETE') {
-              setBookings((prev) => prev.filter((b) => b.id !== payload.old.id));
+              const bookingId = payload.old?.id;
+              if (!bookingId) return;
+              setBookings((prev) => prev.filter((b) => b.id !== bookingId));
             }
           }
         )
         .subscribe();
     }
 
-    if (userId) setupSubscription();
+    if (userId) {
+      setupSubscription();
+    } else {
+      setLoading(false);
+    }
 
     return () => {
       if (channel) supabase.removeChannel(channel);
