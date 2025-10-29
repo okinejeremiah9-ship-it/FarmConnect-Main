@@ -39,12 +39,14 @@ Deno.serve(async (req: Request) => {
       .select(`
         id,
         name,
-        full_name,
         phone,
         role,
+        email,
         bio,
         profile_pic,
         farm_size,
+        crop_types,
+        num_workers,
         services_offered,
         latitude,
         longitude,
@@ -52,7 +54,16 @@ Deno.serve(async (req: Request) => {
         rating,
         total_reviews,
         is_verified,
-        created_at
+        created_at,
+        profile_completed,
+        business_name,
+        contact_person,
+        service_categories,
+        service_description,
+        service_availability,
+        pricing_info,
+        equipment_list,
+        years_experience
       `)
       .eq('id', userId)
       .maybeSingle();
@@ -85,10 +96,17 @@ Deno.serve(async (req: Request) => {
       .order('created_at', { ascending: false })
       .limit(10);
 
+    const sanitizedUser = {
+      ...user,
+      crop_types: user.crop_types ?? [],
+      services_offered: user.services_offered ?? [],
+      service_categories: user.service_categories ?? [],
+    };
+
     return new Response(
       JSON.stringify({
         success: true,
-        user,
+        user: sanitizedUser,
         services: services || [],
         reviews: reviews || [],
       }),

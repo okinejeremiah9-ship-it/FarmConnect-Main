@@ -52,14 +52,15 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       if (!user || user.role === "admin") return;
 
       try {
-        const { data, error } = await supabase
-          .from("profiles")
+        const { data: profileRow, error } = await supabase
+          .from("users")
           .select("profile_completed")
           .eq("id", user.id)
           .single();
 
         if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
+        const isCompleted = profileRow?.profile_completed ?? false;
+        setShowProfileSetup(!isCompleted);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
