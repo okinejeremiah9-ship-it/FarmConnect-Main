@@ -48,7 +48,7 @@ export interface ServiceRequest {
   serviceTitle: string;
   providerId: string;
   providerName: string;
-  status: 'requested' | 'accepted' | 'in-progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'requested' | 'accepted' | 'in-progress' | 'completed' | 'cancelled';
   location: string;
   dateNeeded: string;
   message: string;
@@ -57,4 +57,5 @@ export interface ServiceRequest {
   updatedAt: string;
   escrowStatus?: 'pending' | 'funded' | 'completed' | 'disputed' | 'released' | 'refunded';
   escrowId?: string;
+  canReview?: boolean;
 }

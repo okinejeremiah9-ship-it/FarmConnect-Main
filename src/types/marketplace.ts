@@ -2,36 +2,35 @@ export interface ServiceListing {
   id: string;
   providerId: string;
   providerName: string;
-  providerRating: number;
-  category: 'machinery' | 'mechanic' | 'extension' | 'labour';
+  providerRating?: number | null;
   title: string;
-  description: string;
-  price: number;
-  priceUnit: 'hour' | 'day' | 'session' | 'fixed';
-  location: string;
-  district: string;
+  category?: string | null;
+  description?: string | null;
+  price?: number | null;
+  priceUnit?: 'hour' | 'day' | 'session' | 'fixed';
+  pricingInfo?: string | null;
+  location?: string | null;
+  district?: string | null;
   coordinates?: {
     lat: number;
     lng: number;
   };
-  availability: 'available' | 'busy' | 'unavailable';
-  availableDates: string[];
+  distanceKm?: number | null;
+  availability?: 'available' | 'busy' | 'unavailable';
+  availableDates?: string[];
   equipment?: string[];
   specializations?: string[];
   images?: string[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+  phone?: string | null;
+  email?: string | null;
 }
 
 export interface ServiceFilters {
   category?: string;
-  location?: string;
-  district?: string;
-  availability?: string;
-  priceRange?: {
-    min: number;
-    max: number;
-  };
+  radiusKm?: number;
+  minRating?: number;
   search?: string;
 }
 

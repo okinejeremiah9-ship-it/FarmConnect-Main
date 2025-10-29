@@ -1,18 +1,17 @@
 import React from 'react';
 import { ServiceListing } from '../../types/marketplace';
-import { UserReviews } from '../reviews/UserReviews';
-import { 
-  Star, 
-  MapPin, 
-  Clock, 
-  DollarSign, 
-  Tractor, 
-  Wrench, 
-  Users, 
+import {
+  Star,
+  MapPin,
+  DollarSign,
+  Tractor,
+  Wrench,
+  Users,
   BookOpen,
   Eye,
   Calendar,
-  MessageSquare
+  MessageSquare,
+  Ruler
 } from 'lucide-react';
 
 interface ServiceCardProps {
@@ -58,125 +57,123 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
     }
   };
 
-  const getAvailabilityColor = (availability: string) => {
-    switch (availability) {
-      case 'available':
-        return 'bg-green-100 text-green-800';
-      case 'busy':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'unavailable':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   return (
-    <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-200">
-      {/* Service Image */}
-      <div className="h-48 bg-gradient-to-br from-green-100 to-blue-100 rounded-t-xl flex items-center justify-center">
+    <div className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all border border-gray-200 overflow-hidden flex flex-col">
+      <div className="relative h-48 bg-gradient-to-br from-green-100 to-blue-100">
         {service.images && service.images.length > 0 ? (
           <img
             src={service.images[0]}
             alt={service.title}
-            className="w-full h-full object-cover rounded-t-xl"
+            className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center">
-            {getCategoryIcon(service.category)}
+          <div className="h-full w-full flex items-center justify-center">
+            <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-inner">
+              {getCategoryIcon(service.category)}
+            </div>
           </div>
         )}
+
+        <div className="absolute top-3 left-3 flex flex-wrap gap-2">
+          {service.category && (
+            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm ${getCategoryColor(service.category)}`}>
+              {service.category.charAt(0).toUpperCase() + service.category.slice(1)}
+            </span>
+          )}
+          {service.distanceKm !== undefined && service.distanceKm !== null && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white text-emerald-700 shadow-sm flex items-center gap-1">
+              <Ruler className="w-3 h-3" />
+              {service.distanceKm.toFixed(1)} km
+            </span>
+          )}
+        </div>
       </div>
 
-      <div className="p-6">
-        {/* Header */}
-        <div className="flex justify-between items-start mb-3">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(service.category)}`}>
-                {service.category.charAt(0).toUpperCase() + service.category.slice(1)}
-              </span>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAvailabilityColor(service.availability)}`}>
-                {service.availability.charAt(0).toUpperCase() + service.availability.slice(1)}
-              </span>
+      <div className="flex-1 flex flex-col p-6">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 leading-tight">{service.title}</h3>
+          <p className="text-sm text-gray-500">{service.providerName}</p>
+        </div>
+
+        {(service.providerRating || service.providerRating === 0) && (
+          <div className="flex items-center gap-2 mt-3">
+            <span className="inline-flex items-center gap-1 text-sm font-medium text-gray-900">
+              <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+              {service.providerRating?.toFixed(1)}
+            </span>
+            <span className="text-xs text-gray-500">Trusted provider</span>
+          </div>
+        )}
+
+        {service.description && (
+          <p className="mt-3 text-sm text-gray-600 line-clamp-3 leading-relaxed">{service.description}</p>
+        )}
+
+        <dl className="mt-4 space-y-2 text-sm text-gray-600">
+          {service.location && (
+            <div className="flex items-start gap-2">
+              <MapPin className="w-4 h-4 mt-0.5 text-gray-400" />
+              <span>{service.location}</span>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">{service.title}</h3>
-            <p className="text-sm text-gray-600">{service.providerName}</p>
-          </div>
-        </div>
+          )}
+          {(service.price || service.pricingInfo) && (
+            <div className="flex items-start gap-2">
+              <DollarSign className="w-4 h-4 mt-0.5 text-gray-400" />
+              {service.price ? (
+                <span className="font-medium text-gray-900">₵{service.price}<span className="text-xs text-gray-500 ml-1">per {service.priceUnit ?? 'session'}</span></span>
+              ) : (
+                <span>{service.pricingInfo}</span>
+              )}
+            </div>
+          )}
+          {service.availableDates && service.availableDates.length > 0 && (
+            <div className="flex items-start gap-2">
+              <Calendar className="w-4 h-4 mt-0.5 text-gray-400" />
+              <span>Next availability: {new Date(service.availableDates[0]).toLocaleDateString()}</span>
+            </div>
+          )}
+        </dl>
 
-        {/* Rating */}
-        <div className="flex items-center mb-3">
-          <div className="flex items-center">
-            <Star className="w-4 h-4 text-yellow-400 fill-current" />
-            <span className="ml-1 text-sm font-medium text-gray-900">{service.providerRating}</span>
-          </div>
-          <span className="ml-2 text-sm text-gray-500">(24 reviews)</span>
-        </div>
-
-        {/* Description */}
-        <p className="text-sm text-gray-600 mb-4 line-clamp-2">{service.description}</p>
-
-        {/* Details */}
-        <div className="space-y-2 mb-4">
-          <div className="flex items-center text-sm text-gray-600">
-            <MapPin className="w-4 h-4 mr-2" />
-            <span>{service.location}</span>
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <DollarSign className="w-4 h-4 mr-2" />
-            <span>₵{service.price}/{service.priceUnit}</span>
-          </div>
-          <div className="flex items-center text-sm text-gray-600">
-            <Calendar className="w-4 h-4 mr-2" />
-            <span>Next available: {new Date(service.availableDates[0]).toLocaleDateString()}</span>
-          </div>
-        </div>
-
-        {/* Equipment/Specializations */}
-        {(service.equipment || service.specializations) && (
-          <div className="mb-4">
-            <div className="flex flex-wrap gap-1">
-              {(service.equipment || service.specializations)?.slice(0, 2).map((item, index) => (
+        {service.specializations && service.specializations.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">Specialties</p>
+            <div className="flex flex-wrap gap-2">
+              {service.specializations.slice(0, 4).map((item, index) => (
                 <span
                   key={index}
-                  className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full"
+                  className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full"
                 >
                   {item}
                 </span>
               ))}
-              {(service.equipment || service.specializations)!.length > 2 && (
-                <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
-                  +{(service.equipment || service.specializations)!.length - 2} more
+              {service.specializations.length > 4 && (
+                <span className="px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-medium rounded-full">
+                  +{service.specializations.length - 4} more
                 </span>
               )}
-              <span className="ml-2 text-sm text-gray-500">
-                ({Math.floor(Math.random() * 50) + 5} reviews)
-              </span>
             </div>
           </div>
         )}
 
-        {/* Action Buttons */}
-        <div className="flex gap-2">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2">
           <button
             onClick={() => onViewDetails(service)}
-            className="flex-1 bg-gray-100 text-gray-700 py-2 px-3 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center"
+            className="w-full bg-gray-100 text-gray-700 py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center"
           >
             <Eye className="w-4 h-4 mr-1" />
             Details
           </button>
           <button
             onClick={() => onMessageProvider(service)}
-            className="bg-blue-600 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center"
+            className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center"
           >
             <MessageSquare className="w-4 h-4 mr-1" />
             Message
           </button>
           <button
             onClick={() => onBookService(service)}
-            disabled={service.availability !== 'available'}
-            className="bg-green-600 text-white py-2 px-3 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            disabled={service.price === null || service.price === undefined}
+            className="w-full bg-green-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
           >
             <Calendar className="w-4 h-4 mr-1" />
             Book

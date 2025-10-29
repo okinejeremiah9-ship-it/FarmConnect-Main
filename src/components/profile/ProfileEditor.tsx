@@ -232,43 +232,23 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
           />
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Latitude
-            </label>
-            <input
-              type="number"
-              step="any"
-              value={formData.latitude}
-              onChange={(e) => handleInputChange('latitude', e.target.value)}
-              placeholder="0.0000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            />
+            <p className="text-sm font-medium text-blue-900">GPS location</p>
+            <p className="text-sm text-blue-700">
+              {formData.latitude && formData.longitude
+                ? `Location captured: ${Number.parseFloat(formData.latitude as string).toFixed(4)}, ${Number.parseFloat(formData.longitude as string).toFixed(4)}`
+                : 'Click capture location to let us automatically store your GPS coordinates for nearby matches.'}
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Longitude
-            </label>
-            <input
-              type="number"
-              step="any"
-              value={formData.longitude}
-              onChange={(e) => handleInputChange('longitude', e.target.value)}
-              placeholder="0.0000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            />
-          </div>
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={getCurrentLocation}
-              className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center"
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              Get Location
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={getCurrentLocation}
+            className="inline-flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            <MapPin className="w-4 h-4 mr-2" />
+            Capture location
+          </button>
         </div>
 
         {/* Action Buttons */}
