@@ -36,7 +36,7 @@ import LiveTrackingView from "./tracking/LiveTrackingView";
 interface MainAppProps {
   user: any;
   onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => void;
+  onUserUpdate: (updatedUser: any) => Promise<void> | void;
 }
 
 export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
@@ -53,10 +53,10 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 
       try {
         const { data, error } = await supabase
-          .from("profiles")
+          .from("users")
           .select("profile_completed")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
         setShowProfileSetup(!data?.profile_completed);
@@ -105,7 +105,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         throw new Error(result.error || "Failed to update profile");
       }
 
-      onUserUpdate(result.user);
+      await onUserUpdate(result.user);
       setShowProfileSetup(false);
     } catch (error) {
       console.error("Profile update error:", error);

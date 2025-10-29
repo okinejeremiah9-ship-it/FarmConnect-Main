@@ -7,6 +7,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+function normalizeArrayField(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item.trim() : String(item)))
+      .filter(item => item.length > 0);
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',').map(item => item.trim()).filter(item => item.length > 0);
+  }
+
+  return [];
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -41,18 +55,31 @@ Deno.serve(async (req: Request) => {
         name,
         full_name,
         phone,
+        email,
         role,
         bio,
         profile_pic,
         farm_size,
+        crop_types,
+        num_workers,
         services_offered,
+        business_name,
+        contact_person,
+        service_categories,
+        service_description,
+        service_availability,
+        pricing_info,
+        equipment_list,
+        years_experience,
         latitude,
         longitude,
         address,
         rating,
         total_reviews,
         is_verified,
-        created_at
+        profile_completed,
+        created_at,
+        updated_at
       `)
       .eq('id', userId)
       .maybeSingle();
@@ -85,10 +112,18 @@ Deno.serve(async (req: Request) => {
       .order('created_at', { ascending: false })
       .limit(10);
 
+    const normalizedUser = {
+      ...user,
+      crop_types: normalizeArrayField(user.crop_types),
+      services_offered: normalizeArrayField(user.services_offered),
+      service_categories: normalizeArrayField(user.service_categories),
+      equipment_list: normalizeArrayField(user.equipment_list),
+    };
+
     return new Response(
       JSON.stringify({
         success: true,
-        user,
+        user: normalizedUser,
         services: services || [],
         reviews: reviews || [],
       }),

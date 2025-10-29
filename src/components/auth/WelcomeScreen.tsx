@@ -7,7 +7,7 @@ interface WelcomeScreenProps {
     phone: string;
     role: 'farmer' | 'provider' | 'admin';
   };
-  onComplete: () => void;
+  onComplete: () => Promise<void> | void;
 }
 
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onComplete }) => {
@@ -130,7 +130,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ user, onComplete }
 
         {/* Continue Button */}
         <button
-          onClick={onComplete}
+          onClick={() => void onComplete()}
           className={`w-full bg-${config.color}-600 text-white py-4 px-6 rounded-lg font-semibold text-lg hover:bg-${config.color}-700 transition-colors flex items-center justify-center group`}
         >
           Continue to Dashboard

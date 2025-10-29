@@ -37,6 +37,47 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
+  const refreshUserProfile = React.useCallback(
+    async (userId: string, fallbackUser?: any) => {
+      if (!userId) {
+        return null;
+      }
+
+      try {
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to load profile');
+        }
+
+        const profileUser = { ...fallbackUser, ...data.user };
+        setUser(profileUser);
+        localStorage.setItem('user', JSON.stringify(profileUser));
+        return profileUser;
+      } catch (error) {
+        console.error('Failed to refresh user profile:', error);
+        if (fallbackUser) {
+          setUser(fallbackUser);
+          localStorage.setItem('user', JSON.stringify(fallbackUser));
+          return fallbackUser;
+        }
+
+        return null;
+      }
+    },
+    []
+  );
+
   // Check for existing user session on mount
   React.useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -45,22 +86,29 @@ const App: React.FC = () => {
         const parsedUser = JSON.parse(storedUser);
         if (parsedUser.is_verified) {
           setUser(parsedUser);
+          if (parsedUser.id) {
+            void refreshUserProfile(parsedUser.id, parsedUser);
+          }
         }
       } catch (error) {
         localStorage.removeItem('user');
       }
     }
     setLoading(false);
-  }, []);
+  }, [refreshUserProfile]);
 
-  const handleLoginSuccess = (loggedInUser: any) => {
-    setUser(loggedInUser);
-    localStorage.setItem('user', JSON.stringify(loggedInUser));
+  const handleLoginSuccess = async (loggedInUser: any) => {
+    await refreshUserProfile(loggedInUser.id, loggedInUser);
+    setShowAuth(false);
   };
 
-  const handleUserUpdate = (updatedUser: any) => {
-    setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
+  const handleUserUpdate = async (updatedUser: any) => {
+    const targetId = updatedUser?.id ?? user?.id;
+    if (!targetId) {
+      return;
+    }
+
+    await refreshUserProfile(targetId, updatedUser);
   };
 
   const handleSignupSuccess = (phone: string) => {
@@ -95,10 +143,9 @@ const App: React.FC = () => {
     setAuthStep('welcome');
   };
 
-  const handleWelcomeComplete = () => {
+  const handleWelcomeComplete = async () => {
     if (pendingUser) {
-      setUser(pendingUser);
-      localStorage.setItem('user', JSON.stringify(pendingUser));
+      await refreshUserProfile(pendingUser.id, pendingUser);
     }
     setAuthStep('login');
     setShowAuth(false);
