@@ -3,6 +3,7 @@ import { FarmerProfileForm } from './FarmerProfileForm';
 import { ProviderProfileForm } from './ProviderProfileForm';
 import { UserReviews } from '../reviews/UserReviews';
 import { ArrowLeft, Edit, Star, MapPin, Mail, Phone, User as UserIcon } from 'lucide-react';
+import { useUserSession } from '../../contexts/UserSessionContext';
 
 interface ProfilePageProps {
   user: any;
@@ -16,6 +17,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onBack, onProfil
   const [profile, setProfile] = useState<any>(user);
   const [loadingProfile, setLoadingProfile] = useState<boolean>(!user);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const { user: sessionUser, setUser: persistUser } = useUserSession();
 
   const fetchProfile = useCallback(async () => {
     if (!user?.id) {
@@ -42,14 +44,16 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onBack, onProfil
         throw new Error(data.error || 'Failed to load profile');
       }
 
-      setProfile(data.user);
+      const mergedProfile = { ...(sessionUser ?? {}), ...data.user };
+      setProfile(mergedProfile);
+      persistUser(mergedProfile);
     } catch (error) {
       console.error('Failed to fetch profile details:', error);
       setProfileError(error instanceof Error ? error.message : 'Unable to load profile');
     } finally {
       setLoadingProfile(false);
     }
-  }, [user?.id]);
+    }, [user?.id, sessionUser, persistUser]);
 
   useEffect(() => {
     if (user?.id) {
@@ -64,6 +68,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onBack, onProfil
       const updatedProfile = await onProfileUpdate(data);
       if (updatedProfile) {
         setProfile(updatedProfile);
+        persistUser(updatedProfile);
       } else {
         await fetchProfile();
       }

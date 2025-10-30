@@ -5,7 +5,6 @@
 // Purpose: Core navigation & logic handler with permanent profile completion
 
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase"; // ✅ Ensure this import exists
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -46,26 +45,14 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
 
-  // ✅ Check profile completion status once at login
+  // ✅ Check profile completion status from session data
   useEffect(() => {
-    const checkProfileStatus = async () => {
-      if (!user || user.role === "admin") return;
+    if (!user || user.role === "admin") {
+      setShowProfileSetup(false);
+      return;
+    }
 
-      try {
-        const { data, error } = await supabase
-          .from("users")
-          .select("profile_completed")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
-      } catch (err) {
-        console.error("Profile check failed:", err);
-      }
-    };
-
-    checkProfileStatus();
+    setShowProfileSetup(!user.profile_completed);
   }, [user]);
 
   // ✅ Restore ongoing tracking sessions
