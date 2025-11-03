@@ -1,29 +1,28 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { LoginForm } from './components/auth/LoginForm';
-import { SignupForm } from './components/auth/SignupForm';
-import { FarmerSignupForm } from './components/auth/FarmerSignupForm';
-import { ProviderSignupForm } from './components/auth/ProviderSignupForm';
-import { SignupRoleSelector } from './components/auth/SignupRoleSelector';
-import DriverTrackingPage from './components/tracking/DriverTrackingPage';
-import LiveTrackingView from './components/tracking/LiveTrackingView';
-import { SignupSuccessSplash } from './components/auth/SignupSuccessSplash';
-import { WelcomeScreen } from './components/auth/WelcomeScreen';
-import { AdminSignupPage } from './components/auth/AdminSignupPage';
-import { MainApp } from './components/MainApp';
-import { HowItWorks } from './components/HowItWorks';
-import { 
-  Tractor, 
-  Shield, 
-  MapPin, 
-  Users, 
-  CheckCircle, 
+import React, { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { LoginForm } from "./components/auth/LoginForm";
+import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
+import { ProviderSignupForm } from "./components/auth/ProviderSignupForm";
+import { SignupRoleSelector } from "./components/auth/SignupRoleSelector";
+import DriverTrackingPage from "./components/tracking/DriverTrackingPage";
+import LiveTrackingView from "./components/tracking/LiveTrackingView";
+import { SignupSuccessSplash } from "./components/auth/SignupSuccessSplash";
+import { WelcomeScreen } from "./components/auth/WelcomeScreen";
+import { AdminSignupPage } from "./components/auth/AdminSignupPage";
+import { MainApp } from "./components/MainApp";
+import { HowItWorks } from "./components/HowItWorks";
+import {
+  Tractor,
+  Shield,
+  MapPin,
+  Users,
+  CheckCircle,
   ArrowRight,
   Phone,
   Mail,
   Menu,
-  X
-} from 'lucide-react';
+  X,
+} from "lucide-react";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
@@ -38,7 +37,7 @@ const App: React.FC = () => {
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   // Check for existing user session on mount
-  React.useEffect(() => {
+  useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       try {
