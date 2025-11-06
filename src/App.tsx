@@ -85,34 +85,43 @@ const App: React.FC = () => {
     setLoading(false);
   }, [persistUser]);
 
-  const handleLoginSuccess = async (loggedInUser: any) => {
-    let mergedUser = loggedInUser;
+  const handleLoginSuccess = useCallback(
+    async (loggedInUser: any) => {
+      let mergedUser = loggedInUser;
 
-    if (loggedInUser?.id) {
-      try {
-        const latestProfile = await fetchLatestUserProfile(loggedInUser.id);
-        mergedUser = {
-          ...loggedInUser,
-          ...latestProfile,
-        };
-      } catch (error) {
-        console.error('Failed to refresh user after login:', error);
+      if (loggedInUser?.id) {
+        try {
+          const latestProfile = await fetchLatestUserProfile(loggedInUser.id);
+          mergedUser = {
+            ...loggedInUser,
+            ...latestProfile,
+          };
+        } catch (error) {
+          console.error('Failed to refresh user after login:', error);
+        }
       }
-    }
 
-    persistUser(mergedUser);
-  };
+      persistUser(mergedUser);
+    },
+    [fetchLatestUserProfile, persistUser]
+  );
 
-  const handleUserUpdate = (updatedUser: any) => {
-    persistUser(updatedUser);
-  };
+  const handleUserUpdate = useCallback(
+    (updatedUser: any) => {
+      persistUser(updatedUser);
+    },
+    [persistUser]
+  );
 
-  const handleSignupSuccess = (phone: string) => {
-    setPendingPhone(phone);
-    setAuthStep('splash');
-  };
+  const handleSignupSuccess = useCallback(
+    (phone: string) => {
+      setPendingPhone(phone);
+      setAuthStep('splash');
+    },
+    []
+  );
 
-  const handleSplashComplete = async () => {
+  const handleSplashComplete = useCallback(async () => {
     // Fetch user data after splash
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`, {
@@ -151,20 +160,20 @@ const App: React.FC = () => {
     }
 
     setAuthStep('welcome');
-  };
+  }, [fetchLatestUserProfile, pendingPhone, persistUser]);
 
-  const handleWelcomeComplete = () => {
+  const handleWelcomeComplete = useCallback(() => {
     if (pendingUser) {
       persistUser(pendingUser);
     }
     setAuthStep('login');
     setShowAuth(false);
-  };
+  }, [pendingUser, persistUser]);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     persistUser(null);
     setAuthStep('login');
-  };
+  }, [persistUser]);
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
