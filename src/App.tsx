@@ -177,40 +177,39 @@ const App: React.FC = () => {
   }
 
   // Show authenticated app if user is logged in
-if (user && user.is_verified) {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/admin-signup" element={<AdminSignupPage />} />
+  if (user && user.is_verified) {
+    return (
+      <Router>
+        <Routes>
+          <Route path="/admin-signup" element={<AdminSignupPage />} />
 
-        {/* ✅ Main dashboard area */}
-        <Route
-          path="/*"
-          element={
-            <MainApp
-              user={user}
-              onLogout={handleLogout}
-              onUserUpdate={handleUserUpdate}
-            />
-          }
-        />
+          {/* ✅ Main dashboard area */}
+          <Route
+            path="/*"
+            element={
+              <MainApp
+                user={user}
+                onLogout={handleLogout}
+                onUserUpdate={handleUserUpdate}
+              />
+            }
+          />
 
-        {/* ✅ Driver Tracking Page (GPS-enabled) */}
-        <Route
-          path="/driver-tracking/:sessionId"
-          element={<DriverTrackingPage sessionId={""} />}
-        />
+          {/* ✅ Driver Tracking Page (GPS-enabled) */}
+          <Route
+            path="/driver-tracking/:sessionId"
+            element={<DriverTrackingPage sessionId={""} />}
+          />
 
-        {/* ✅ Live Tracking Map (for viewing driver’s movement) */}
-        <Route
-          path="/live-tracking/:bookingId"
-          element={<LiveTrackingView />}
-        />
-      </Routes>
-    </Router>
-  );
-}
-
+          {/* ✅ Live Tracking Map (for viewing driver’s movement) */}
+          <Route
+            path="/live-tracking/:bookingId"
+            element={<LiveTrackingView />}
+          />
+        </Routes>
+      </Router>
+    );
+  }
 
   // Show welcome splash if user just verified
   if (authStep === 'welcome' && pendingUser) {
