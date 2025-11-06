@@ -1,29 +1,29 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { LoginForm } from './components/auth/LoginForm';
-import { SignupForm } from './components/auth/SignupForm';
-import { FarmerSignupForm } from './components/auth/FarmerSignupForm';
-import { ProviderSignupForm } from './components/auth/ProviderSignupForm';
-import { SignupRoleSelector } from './components/auth/SignupRoleSelector';
-import DriverTrackingPage from './components/tracking/DriverTrackingPage';
-import LiveTrackingView from './components/tracking/LiveTrackingView';
-import { SignupSuccessSplash } from './components/auth/SignupSuccessSplash';
-import { WelcomeScreen } from './components/auth/WelcomeScreen';
-import { AdminSignupPage } from './components/auth/AdminSignupPage';
-import { MainApp } from './components/MainApp';
-import { HowItWorks } from './components/HowItWorks';
-import { 
-  Tractor, 
-  Shield, 
-  MapPin, 
-  Users, 
-  CheckCircle, 
+import React, { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { LoginForm } from "./components/auth/LoginForm";
+import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
+import { ProviderSignupForm } from "./components/auth/ProviderSignupForm";
+import { SignupRoleSelector } from "./components/auth/SignupRoleSelector";
+import DriverTrackingPage from "./components/tracking/DriverTrackingPage";
+import LiveTrackingView from "./components/tracking/LiveTrackingView";
+import { SignupSuccessSplash } from "./components/auth/SignupSuccessSplash";
+import { WelcomeScreen } from "./components/auth/WelcomeScreen";
+import { AdminSignupPage } from "./components/auth/AdminSignupPage";
+import { MainApp } from "./components/MainApp";
+import { HowItWorks } from "./components/HowItWorks";
+import { normalizeUserProfile } from "./utils/profile";
+import {
+  Tractor,
+  Shield,
+  MapPin,
+  Users,
+  CheckCircle,
   ArrowRight,
   Phone,
   Mail,
   Menu,
-  X
-} from 'lucide-react';
+  X,
+} from "lucide-react";
 
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
@@ -38,11 +38,11 @@ const App: React.FC = () => {
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   // Check for existing user session on mount
-  React.useEffect(() => {
+  useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       try {
-        const parsedUser = JSON.parse(storedUser);
+        const parsedUser = normalizeUserProfile(JSON.parse(storedUser));
         if (parsedUser.is_verified) {
           setUser(parsedUser);
         }
@@ -54,13 +54,15 @@ const App: React.FC = () => {
   }, []);
 
   const handleLoginSuccess = (loggedInUser: any) => {
-    setUser(loggedInUser);
-    localStorage.setItem('user', JSON.stringify(loggedInUser));
+    const normalizedUser = normalizeUserProfile(loggedInUser);
+    setUser(normalizedUser);
+    localStorage.setItem('user', JSON.stringify(normalizedUser));
   };
 
   const handleUserUpdate = (updatedUser: any) => {
-    setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
+    const normalizedUser = normalizeUserProfile(updatedUser);
+    setUser(normalizedUser);
+    localStorage.setItem('user', JSON.stringify(normalizedUser));
   };
 
   const handleSignupSuccess = (phone: string) => {
@@ -86,7 +88,7 @@ const App: React.FC = () => {
 
       const data = await response.json();
       if (data.success) {
-        setPendingUser(data.user);
+        setPendingUser(normalizeUserProfile(data.user));
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
