@@ -25,12 +25,18 @@ import {
   X,
 } from "lucide-react";
 
+type AuthStep =
+  | 'login'
+  | 'choose-role'
+  | 'signup-farmer'
+  | 'signup-provider'
+  | 'splash'
+  | 'welcome';
+
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<
-    'login' | 'choose-role' | 'signup-farmer' | 'signup-provider' | 'splash' | 'welcome'
-  >('login');
+  const [authStep, setAuthStep] = useState<AuthStep>('login');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>('');
   const [showAuth, setShowAuth] = useState(false);
