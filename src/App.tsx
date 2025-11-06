@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { LoginForm } from "./components/auth/LoginForm";
 import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
@@ -37,32 +37,74 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
+  const persistUser = useCallback((rawUser: any | null) => {
+    if (!rawUser) {
+      setUser(null);
+      localStorage.removeItem('user');
+      return null;
+    }
+
+    const normalizedUser = normalizeUserProfile(rawUser);
+    setUser(normalizedUser);
+    localStorage.setItem('user', JSON.stringify(normalizedUser));
+    return normalizedUser;
+  }, []);
+
+  const fetchLatestUserProfile = useCallback(async (userId: string) => {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to fetch user profile');
+    }
+
+    return data.user;
+  }, []);
+
   // Check for existing user session on mount
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       try {
-        const parsedUser = normalizeUserProfile(JSON.parse(storedUser));
-        if (parsedUser.is_verified) {
-          setUser(parsedUser);
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser?.is_verified) {
+          persistUser(parsedUser);
         }
       } catch (error) {
         localStorage.removeItem('user');
       }
     }
     setLoading(false);
-  }, []);
+  }, [persistUser]);
 
-  const handleLoginSuccess = (loggedInUser: any) => {
-    const normalizedUser = normalizeUserProfile(loggedInUser);
-    setUser(normalizedUser);
-    localStorage.setItem('user', JSON.stringify(normalizedUser));
+  const handleLoginSuccess = async (loggedInUser: any) => {
+    let mergedUser = loggedInUser;
+
+    if (loggedInUser?.id) {
+      try {
+        const latestProfile = await fetchLatestUserProfile(loggedInUser.id);
+        mergedUser = {
+          ...loggedInUser,
+          ...latestProfile,
+        };
+      } catch (error) {
+        console.error('Failed to refresh user after login:', error);
+      }
+    }
+
+    persistUser(mergedUser);
   };
 
   const handleUserUpdate = (updatedUser: any) => {
-    const normalizedUser = normalizeUserProfile(updatedUser);
-    setUser(normalizedUser);
-    localStorage.setItem('user', JSON.stringify(normalizedUser));
+    persistUser(updatedUser);
   };
 
   const handleSignupSuccess = (phone: string) => {
@@ -88,27 +130,39 @@ const App: React.FC = () => {
 
       const data = await response.json();
       if (data.success) {
-        setPendingUser(normalizeUserProfile(data.user));
+        let refreshedUser = data.user;
+
+        if (data.user?.id) {
+          try {
+            const latestProfile = await fetchLatestUserProfile(data.user.id);
+            refreshedUser = {
+              ...data.user,
+              ...latestProfile,
+            };
+          } catch (error) {
+            console.error('Failed to refresh user after splash:', error);
+          }
+        }
+
+        setPendingUser(normalizeUserProfile(refreshedUser));
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
     }
-    
+
     setAuthStep('welcome');
   };
 
   const handleWelcomeComplete = () => {
     if (pendingUser) {
-      setUser(pendingUser);
-      localStorage.setItem('user', JSON.stringify(pendingUser));
+      persistUser(pendingUser);
     }
     setAuthStep('login');
     setShowAuth(false);
   };
 
   const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
+    persistUser(null);
     setAuthStep('login');
   };
   if (loading) {
