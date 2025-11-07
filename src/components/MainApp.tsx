@@ -5,7 +5,6 @@
 // Purpose: Core navigation & logic handler with permanent profile completion
 
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase"; // ✅ Ensure this import exists
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -37,7 +36,7 @@ import LiveTrackingView from "./tracking/LiveTrackingView";
 interface MainAppProps {
   user: any;
   onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => Promise<void>;
+  onUserUpdate: (updatedUser: any) => Promise<void> | void;
 }
 
 export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
@@ -47,7 +46,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
 
-  // ✅ Check profile completion status once at login
+  // ✅ Check profile completion status from session data
   useEffect(() => {
     const checkProfileStatus = async () => {
       if (!user || user.role === "admin") return;
@@ -60,13 +59,14 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
+        const isCompleted = profileRow?.profile_completed ?? false;
+        setShowProfileSetup(!isCompleted);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
     };
 
-    checkProfileStatus();
+    setShowProfileSetup(!user.profile_completed);
   }, [user]);
 
   // ✅ Restore ongoing tracking sessions
@@ -113,7 +113,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       }
 
       const profileResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${user.id}`,
         {
           headers: {
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
@@ -127,13 +127,14 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         throw new Error(profileResult.error || "Failed to refresh profile");
       }
 
-      await onUserUpdate(
+      onUserUpdate(
         normalizeUserProfile({
           ...user,
           ...profileResult.user,
         })
       );
       setShowProfileSetup(false);
+      return result.user;
     } catch (error) {
       console.error("Profile update error:", error);
       throw error instanceof Error ? error : new Error("Failed to update profile");

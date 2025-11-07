@@ -1,4 +1,6 @@
+
 import React, { useCallback, useEffect, useState } from "react";
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { LoginForm } from "./components/auth/LoginForm";
 import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
@@ -11,7 +13,9 @@ import { WelcomeScreen } from "./components/auth/WelcomeScreen";
 import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 import { MainApp } from "./components/MainApp";
 import { HowItWorks } from "./components/HowItWorks";
+
 import { normalizeUserProfile } from "./utils/profile";
+
 import {
   Tractor,
   Shield,
@@ -24,6 +28,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
+
 
 type AuthStep =
   | 'login'
@@ -69,10 +74,6 @@ const App: React.FC = () => {
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      if (response.status === 404 || data.error === 'User not found') {
-        return null;
-      }
-
       throw new Error(data.error || 'Failed to fetch user profile');
     }
 
@@ -95,13 +96,10 @@ const App: React.FC = () => {
       if (baseUser?.id) {
         try {
           const latestProfile = await fetchLatestUserProfile(baseUser.id);
-
-          if (latestProfile) {
-            mergedUser = {
-              ...baseUser,
-              ...latestProfile,
-            };
-          }
+          mergedUser = {
+            ...baseUser,
+            ...latestProfile,
+          };
         } catch (error) {
           console.error('Failed to refresh user profile:', error);
         }
@@ -142,10 +140,10 @@ const App: React.FC = () => {
   );
 
   const handleUserUpdate = useCallback(
-    async (updatedUser: any) => {
-      await refreshAndPersistUser(updatedUser, { persist: true });
+    (updatedUser: any) => {
+      persistUser(updatedUser);
     },
-    [refreshAndPersistUser]
+    [persistUser]
   );
 
   const handleSignupSuccess = useCallback(
