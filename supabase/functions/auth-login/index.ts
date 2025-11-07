@@ -41,6 +41,20 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+function normalizeArrayField(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item.trim() : String(item)))
+      .filter(item => item.length > 0);
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    return value.split(',').map(item => item.trim()).filter(item => item.length > 0);
+  }
+
+  return [];
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -84,16 +98,16 @@ serve(async (req) => {
         password_hash,
         is_verified,
         created_at,
+        updated_at,
         email,
+        profile_pic,
+        bio,
         address,
         latitude,
         longitude,
-        bio,
-        profile_pic,
         farm_size,
         crop_types,
         num_workers,
-        services_offered,
         business_name,
         contact_person,
         service_categories,
@@ -119,28 +133,25 @@ serve(async (req) => {
     }
 
     // Skip password verification if fetch_user_only is true
+    const passwordHash = user.password_hash
+
     if (!fetch_user_only) {
       // Hash provided password and compare
       const hashedPassword = await hashPassword(password);
-      
-      if (hashedPassword !== user.password_hash) {
+
+      if (hashedPassword !== passwordHash) {
         throw new Error('Incorrect password')
       }
     }
 
     // Return user data (excluding password hash)
-    const {
-      password_hash: _passwordHash,
-      ...publicUserFields
-    } = user;
-
+    const { password_hash, ...publicUser } = user
     const userData = {
-      ...publicUserFields,
-      // Ensure arrays default to [] so the UI keeps selections after reloads
-      crop_types: publicUserFields.crop_types ?? [],
-      services_offered: publicUserFields.services_offered ?? [],
-      service_categories: publicUserFields.service_categories ?? [],
-    };
+      ...publicUser,
+      crop_types: normalizeArrayField(user.crop_types),
+      service_categories: normalizeArrayField(user.service_categories),
+      equipment_list: normalizeArrayField(user.equipment_list),
+    }
 
     return new Response(
       JSON.stringify({

@@ -17,7 +17,6 @@ import {
   normalizeGhanaPhoneNumber,
   isValidGhanaPhoneNumber,
 } from '../../utils/phone';
-import { useGeolocationCapture } from '../../hooks/useGeolocationCapture';
 
 interface FarmerSignupFormProps {
   onSwitchToLogin: () => void;
@@ -45,26 +44,6 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const {
-    coordinates,
-    status: locationStatus,
-    error: locationError,
-    isCapturing,
-    captureLocation,
-  } = useGeolocationCapture();
-
-  const locationMessage = (() => {
-    if (locationStatus) {
-      return locationStatus;
-    }
-
-    if (coordinates) {
-      const { latitude, longitude } = coordinates;
-      return `Location captured: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-    }
-
-    return 'Capture your farm location to help us suggest nearby service providers automatically.';
-  })();
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -122,37 +101,31 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
       numWorkers = parsedWorkers;
     }
 
-    if (!coordinates) {
-      setError('Capture your farm location so nearby service providers can find you.');
-      return;
-    }
-
     setLoading(true);
 
     try {
-      const payload: Record<string, unknown> = {
-        role: 'farmer',
-        name: formData.name,
-        email: formData.email || null,
-        phone: normalizedPhone,
-        password: formData.password,
-        address: formData.address || null,
-        farm_size: formData.farmSize,
-        crop_types: cropTypes,
-        num_workers: numWorkers,
-        profile_completed: true,
-        latitude: coordinates.latitude,
-        longitude: coordinates.longitude,
-      };
-
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            role: 'farmer',
+            name: formData.name,
+            email: formData.email || null,
+            phone: normalizedPhone,
+            password: formData.password,
+            address: formData.address || null,
+            farm_size: formData.farmSize,
+            crop_types: cropTypes,
+            num_workers: numWorkers,
+            profile_completed: true,
+          }),
+        }
+      );
 
       const data = await response.json();
 
@@ -181,13 +154,17 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
             Choose a different account type
           </button>
         </div>
+
         <div className="text-center mb-8">
           <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700 mb-4">
             Farmer account setup
           </span>
-          <h2 className="text-3xl font-bold text-gray-900">Tell us about your farm</h2>
+          <h2 className="text-3xl font-bold text-gray-900">
+            Tell us about your farm
+          </h2>
           <p className="text-gray-600 mt-2">
-            We use this information to match you with the best service providers in your area.
+            We use this information to match you with the best service providers
+            in your area.
           </p>
         </div>
 
@@ -200,7 +177,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Full Name *
+              </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -215,7 +194,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Email (optional)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email (optional)
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -230,33 +211,11 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
             </div>
           </div>
 
-          <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-sm font-medium text-green-900">Farm location for nearby matches</p>
-              <p className="text-sm text-green-700">{locationMessage}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setError('');
-                captureLocation();
-              }}
-              disabled={isCapturing}
-              className={`inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium text-white transition ${
-                isCapturing ? 'bg-green-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
-              }`}
-            >
-              <MapPin className="w-4 h-4 mr-2" />
-              {isCapturing ? 'Capturing…' : coordinates ? 'Retake location' : 'Capture location'}
-            </button>
-          </div>
-          {locationError && (
-            <p className="text-sm text-red-600">{locationError}</p>
-          )}
-
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number *
+              </label>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -269,10 +228,14 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Ghana phone numbers only</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Ghana phone numbers only
+              </p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Farm Location</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Farm Location
+              </label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -289,7 +252,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Farm Size & Type *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Farm Size & Type *
+              </label>
               <div className="relative">
                 <Sprout className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -304,7 +269,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Crop Types *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Crop Types *
+              </label>
               <div className="relative">
                 <Wheat className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -317,12 +284,16 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Separate multiple crops with commas</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Separate multiple crops with commas
+              </p>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Number of Workers</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Number of Workers
+            </label>
             <div className="relative">
               <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
@@ -339,7 +310,9 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password *
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -356,12 +329,18 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   onClick={() => setShowPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                 >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Confirm Password *
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
@@ -378,7 +357,11 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
                   onClick={() => setShowConfirmPassword((prev) => !prev)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500"
                 >
-                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  {showConfirmPassword ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
                 </button>
               </div>
             </div>
@@ -391,7 +374,8 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
           >
             {loading ? (
               <>
-                <Loader className="w-5 h-5 mr-2 animate-spin" /> Creating your account...
+                <Loader className="w-5 h-5 mr-2 animate-spin" /> Creating your
+                account...
               </>
             ) : (
               'Create farmer account'
@@ -413,3 +397,7 @@ export const FarmerSignupForm: React.FC<FarmerSignupFormProps> = ({
     </div>
   );
 };
+
+export default FarmerSignupForm;
+
+

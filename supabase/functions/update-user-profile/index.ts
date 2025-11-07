@@ -7,6 +7,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+function normalizeArrayField(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : String(item)))
+      .filter((item) => item.length > 0);
+  }
+
+  if (typeof value === "string" && value.length > 0) {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  return [];
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -42,7 +59,7 @@ Deno.serve(async (req: Request) => {
       // Farmer fields
       'farm_size', 'crop_types', 'num_workers',
       // Provider fields
-      'business_name', 'contact_person', 'service_categories',
+      'business_name', 'contact_person', 'service_categories', 'services_offered',
       'service_description', 'service_availability', 'pricing_info',
       'equipment_list', 'years_experience',
       // Profile completion
@@ -71,10 +88,18 @@ Deno.serve(async (req: Request) => {
       throw new Error('Failed to update profile: ' + updateError.message);
     }
 
+    const normalizedUser = {
+      ...updatedUser,
+      crop_types: normalizeArrayField(updatedUser?.crop_types),
+      services_offered: normalizeArrayField(updatedUser?.services_offered),
+      service_categories: normalizeArrayField(updatedUser?.service_categories),
+      equipment_list: normalizeArrayField(updatedUser?.equipment_list),
+    };
+
     return new Response(
       JSON.stringify({
         success: true,
-        user: updatedUser,
+        user: normalizedUser,
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
