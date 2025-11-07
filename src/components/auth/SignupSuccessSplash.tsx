@@ -2,13 +2,13 @@ import React, { useEffect } from 'react';
 import { CheckCircle, Sparkles } from 'lucide-react';
 
 interface SignupSuccessSplashProps {
-  onComplete: () => void;
+  onComplete: () => Promise<void> | void;
 }
 
 export const SignupSuccessSplash: React.FC<SignupSuccessSplashProps> = ({ onComplete }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
-      onComplete();
+      void onComplete();
     }, 3000); // Show for 3 seconds
 
     return () => clearTimeout(timer);

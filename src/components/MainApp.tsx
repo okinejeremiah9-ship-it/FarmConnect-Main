@@ -5,7 +5,6 @@
 // Purpose: Core navigation & logic handler with permanent profile completion
 
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase"; // ✅ Ensure this import exists
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -25,7 +24,6 @@ import { ServiceMarketplace } from "./marketplace/ServiceMarketplace";
 import { UserReviews } from "./reviews/UserReviews";
 import { HowItWorks } from "./HowItWorks";
 import { normalizeUserProfile } from "../utils/profile";
-import { fetchUserProfileById, updateUserProfile as updateUserProfileFn } from "../utils/supabaseFunctions";
 
 import { BookingsPage } from "./bookings/BookingsPage";
 import { WalletPage } from "./wallet/WalletPage";
@@ -38,7 +36,7 @@ import LiveTrackingView from "./tracking/LiveTrackingView";
 interface MainAppProps {
   user: any;
   onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => Promise<void>;
+  onUserUpdate: (updatedUser: any) => Promise<void> | void;
 }
 
 export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
@@ -48,7 +46,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
 
-  // ✅ Check profile completion status once at login
+  // ✅ Check profile completion status from session data
   useEffect(() => {
     const checkProfileStatus = async () => {
       if (!user || user.role === "admin") return;
@@ -61,15 +59,14 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-
-        // Only force profile setup when the backend explicitly marks it incomplete.
-        setShowProfileSetup(data?.profile_completed === false);
+        const isCompleted = profileRow?.profile_completed ?? false;
+        setShowProfileSetup(!isCompleted);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
     };
 
-    checkProfileStatus();
+    setShowProfileSetup(!user.profile_completed);
   }, [user]);
 
   // ✅ Restore ongoing tracking sessions
@@ -91,39 +88,21 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   // ✅ Update profile and mark completed
   const handleProfileUpdate = async (data: any) => {
     try {
-      const targetUserIdValue = user?.id ?? user?.user_id;
-      const targetUserId =
-        typeof targetUserIdValue === "string"
-          ? targetUserIdValue.trim()
-          : targetUserIdValue
-          ? String(targetUserIdValue)
-          : "";
+      const targetUserId = user?.id ?? user?.user_id;
 
       if (!targetUserId) {
-        throw new Error("Missing user identifier. Please sign in again.");
+        throw new Error('Missing user identifier. Please sign in again.');
       }
 
-      const updatedProfile = await updateUserProfileFn({
-        ...data,
-        user_id: targetUserId,
-      });
-
-      let mergedProfile = updatedProfile;
-
-      try {
-        const { user: refreshedProfile } = await fetchUserProfileById(targetUserId);
-
-        if (refreshedProfile) {
-          mergedProfile = {
-            ...mergedProfile,
-            ...refreshedProfile,
-          };
-        }
-      } catch (refreshError) {
-        const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
-
-        if (message !== "User not found") {
-          console.error("Failed to refresh profile:", refreshError);
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ...data, user_id: targetUserId }),
         }
       }
 
@@ -144,7 +123,29 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         console.error("Failed to mark profile as completed:", completionError);
       }
 
+      const profileResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${user.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+
+      const profileResult = await profileResponse.json();
+
+      if (!profileResponse.ok || !profileResult.success) {
+        throw new Error(profileResult.error || "Failed to refresh profile");
+      }
+
+      onUserUpdate(
+        normalizeUserProfile({
+          ...user,
+          ...profileResult.user,
+        })
+      );
       setShowProfileSetup(false);
+      return result.user;
     } catch (error) {
       console.error("Profile update error:", error);
       throw error instanceof Error ? error : new Error("Failed to update profile");

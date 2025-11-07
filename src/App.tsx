@@ -1,4 +1,6 @@
+
 import React, { useCallback, useEffect, useState } from "react";
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { LoginForm } from "./components/auth/LoginForm";
 import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
@@ -11,8 +13,9 @@ import { WelcomeScreen } from "./components/auth/WelcomeScreen";
 import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 import { MainApp } from "./components/MainApp";
 import { HowItWorks } from "./components/HowItWorks";
+
 import { normalizeUserProfile } from "./utils/profile";
-import { fetchUserProfileById } from "./utils/supabaseFunctions";
+
 import {
   Tractor,
   Shield,
@@ -25,6 +28,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
+
 
 type AuthStep =
   | 'login'
@@ -58,18 +62,22 @@ const App: React.FC = () => {
   }, []);
 
   const fetchLatestUserProfile = useCallback(async (userId: string) => {
-    try {
-      const { user: profile } = await fetchUserProfileById(userId);
-      return profile;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      if (message === "User not found") {
-        return null;
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
       }
+    );
 
-      throw error;
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to fetch user profile');
     }
+
+    return data.user;
   }, []);
 
   const refreshAndPersistUser = useCallback(
@@ -88,13 +96,10 @@ const App: React.FC = () => {
       if (baseUser?.id) {
         try {
           const latestProfile = await fetchLatestUserProfile(baseUser.id);
-
-          if (latestProfile) {
-            mergedUser = {
-              ...baseUser,
-              ...latestProfile,
-            };
-          }
+          mergedUser = {
+            ...baseUser,
+            ...latestProfile,
+          };
         } catch (error) {
           console.error('Failed to refresh user profile:', error);
         }
@@ -135,10 +140,10 @@ const App: React.FC = () => {
   );
 
   const handleUserUpdate = useCallback(
-    async (updatedUser: any) => {
-      await refreshAndPersistUser(updatedUser, { persist: true });
+    (updatedUser: any) => {
+      persistUser(updatedUser);
     },
-    [refreshAndPersistUser]
+    [persistUser]
   );
 
   const handleSignupSuccess = useCallback(
