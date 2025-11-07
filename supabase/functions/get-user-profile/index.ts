@@ -53,10 +53,10 @@ Deno.serve(async (req: Request) => {
       .select(`
         id,
         name,
-        full_name,
         phone,
         email,
         role,
+        email,
         bio,
         profile_pic,
         farm_size,

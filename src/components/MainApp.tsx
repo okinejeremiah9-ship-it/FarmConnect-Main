@@ -59,7 +59,8 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
+        const isCompleted = profileRow?.profile_completed ?? false;
+        setShowProfileSetup(!isCompleted);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
