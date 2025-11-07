@@ -1,4 +1,6 @@
+
 import React, { useCallback, useEffect, useState } from "react";
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { LoginForm } from "./components/auth/LoginForm";
 import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
@@ -11,7 +13,9 @@ import { WelcomeScreen } from "./components/auth/WelcomeScreen";
 import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 import { MainApp } from "./components/MainApp";
 import { HowItWorks } from "./components/HowItWorks";
+
 import { normalizeUserProfile } from "./utils/profile";
+
 import {
   Tractor,
   Shield,
@@ -24,6 +28,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
+
 
 type AuthStep =
   | 'login'
