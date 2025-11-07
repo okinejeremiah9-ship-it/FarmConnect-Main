@@ -1,19 +1,27 @@
 import React, { useState } from 'react';
 import { UserPlus, Copy, Check, Loader, Clock } from 'lucide-react';
+import { useUserSession } from '../../contexts/UserSessionContext';
 
 export const AdminInviteGenerator: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const { user } = useUserSession();
 
   const generateInvite = async () => {
     setLoading(true);
     setError('');
 
     try {
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
+      if (!user?.id) {
+        throw new Error('You must be logged in as an administrator to generate invite links.');
+      }
+
+      if (user.role !== 'admin') {
+        throw new Error('Only administrators can generate invite links.');
+      }
+
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-admin-invite`, {
         method: 'POST',
         headers: {
