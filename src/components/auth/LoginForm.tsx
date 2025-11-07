@@ -4,6 +4,8 @@ import {
   normalizeGhanaPhoneNumber,
   isValidGhanaPhoneNumber,
 } from '../../utils/phone';
+import { supabase } from '../../lib/supabaseClient';
+import { normalizeUserProfile } from '../../utils/profile';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
@@ -31,26 +33,32 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
 
       const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
       
-      // Call login API
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: normalizedPhone,
-          password: formData.password,
-        }),
+      const email = `${normalizedPhone}@farmconnect.gh`;
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: formData.password,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Login failed');
+      if (signInError) {
+        throw new Error(signInError.message || 'Login failed');
       }
 
-      await onLoginSuccess(data.user);
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('phone', normalizedPhone)
+        .maybeSingle();
+
+      if (profileError) {
+        throw new Error(profileError.message || 'Failed to load profile');
+      }
+
+      if (!profile) {
+        throw new Error('No profile found for this account');
+      }
+
+      await onLoginSuccess(normalizeUserProfile(profile));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
