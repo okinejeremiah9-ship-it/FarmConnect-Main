@@ -24,6 +24,8 @@ import { ServiceMap } from "./map/ServiceMap";
 import { ServiceMarketplace } from "./marketplace/ServiceMarketplace";
 import { UserReviews } from "./reviews/UserReviews";
 import { HowItWorks } from "./HowItWorks";
+import { normalizeUserProfile } from "../utils/profile";
+import { fetchUserProfileById, updateUserProfile as updateUserProfileFn } from "../utils/supabaseFunctions";
 
 import { BookingsPage } from "./bookings/BookingsPage";
 import { WalletPage } from "./wallet/WalletPage";
@@ -36,7 +38,7 @@ import LiveTrackingView from "./tracking/LiveTrackingView";
 interface MainAppProps {
   user: any;
   onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => void;
+  onUserUpdate: (updatedUser: any) => Promise<void>;
 }
 
 export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
@@ -59,7 +61,9 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
+
+        // Only force profile setup when the backend explicitly marks it incomplete.
+        setShowProfileSetup(data?.profile_completed === false);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
@@ -87,25 +91,59 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   // ✅ Update profile and mark completed
   const handleProfileUpdate = async (data: any) => {
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ...data, user_id: user.id }),
-        }
-      );
+      const targetUserIdValue = user?.id ?? user?.user_id;
+      const targetUserId =
+        typeof targetUserIdValue === "string"
+          ? targetUserIdValue.trim()
+          : targetUserIdValue
+          ? String(targetUserIdValue)
+          : "";
 
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to update profile");
+      if (!targetUserId) {
+        throw new Error("Missing user identifier. Please sign in again.");
       }
 
-      onUserUpdate(result.user);
+      const updatedProfile = await updateUserProfileFn({
+        ...data,
+        user_id: targetUserId,
+      });
+
+      let mergedProfile = updatedProfile;
+
+      try {
+        const { user: refreshedProfile } = await fetchUserProfileById(targetUserId);
+
+        if (refreshedProfile) {
+          mergedProfile = {
+            ...mergedProfile,
+            ...refreshedProfile,
+          };
+        }
+      } catch (refreshError) {
+        const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
+
+        if (message !== "User not found") {
+          console.error("Failed to refresh profile:", refreshError);
+        }
+      }
+
+      await onUserUpdate(
+        normalizeUserProfile({
+          ...user,
+          ...mergedProfile,
+        })
+      );
+
+      // Ensure the completion flag is persisted so subsequent logins land on the dashboard.
+      const { error: completionError } = await supabase
+        .from("users")
+        .update({ profile_completed: true })
+        .eq("id", targetUserId);
+
+      if (completionError) {
+        console.error("Failed to mark profile as completed:", completionError);
+      }
+
       setShowProfileSetup(false);
     } catch (error) {
       console.error("Profile update error:", error);
