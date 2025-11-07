@@ -88,6 +88,12 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   // ✅ Update profile and mark completed
   const handleProfileUpdate = async (data: any) => {
     try {
+      const targetUserId = user?.id ?? user?.user_id;
+
+      if (!targetUserId) {
+        throw new Error('Missing user identifier. Please sign in again.');
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
         {
@@ -96,7 +102,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ ...data, user_id: user.id }),
+          body: JSON.stringify({ ...data, user_id: targetUserId }),
         }
       );
 
