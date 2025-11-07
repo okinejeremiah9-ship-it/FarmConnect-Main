@@ -75,6 +75,42 @@ const App: React.FC = () => {
     return data.user;
   }, []);
 
+  const refreshAndPersistUser = useCallback(
+    async (baseUser: any | null, options: { persist?: boolean } = {}) => {
+      const shouldPersist = options.persist ?? true;
+
+      if (!baseUser) {
+        if (shouldPersist) {
+          persistUser(null);
+        }
+        return null;
+      }
+
+      let mergedUser = baseUser;
+
+      if (baseUser?.id) {
+        try {
+          const latestProfile = await fetchLatestUserProfile(baseUser.id);
+          mergedUser = {
+            ...baseUser,
+            ...latestProfile,
+          };
+        } catch (error) {
+          console.error('Failed to refresh user profile:', error);
+        }
+      }
+
+      const normalizedUser = normalizeUserProfile(mergedUser);
+
+      if (shouldPersist) {
+        persistUser(normalizedUser);
+      }
+
+      return normalizedUser;
+    },
+    [fetchLatestUserProfile, persistUser]
+  );
+
   // Check for existing user session on mount
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -93,23 +129,9 @@ const App: React.FC = () => {
 
   const handleLoginSuccess = useCallback(
     async (loggedInUser: any) => {
-      let mergedUser = loggedInUser;
-
-      if (loggedInUser?.id) {
-        try {
-          const latestProfile = await fetchLatestUserProfile(loggedInUser.id);
-          mergedUser = {
-            ...loggedInUser,
-            ...latestProfile,
-          };
-        } catch (error) {
-          console.error('Failed to refresh user after login:', error);
-        }
-      }
-
-      persistUser(mergedUser);
+      await refreshAndPersistUser(loggedInUser, { persist: true });
     },
-    [fetchLatestUserProfile, persistUser]
+    [refreshAndPersistUser]
   );
 
   const handleUserUpdate = useCallback(
@@ -145,28 +167,15 @@ const App: React.FC = () => {
 
       const data = await response.json();
       if (data.success) {
-        let refreshedUser = data.user;
-
-        if (data.user?.id) {
-          try {
-            const latestProfile = await fetchLatestUserProfile(data.user.id);
-            refreshedUser = {
-              ...data.user,
-              ...latestProfile,
-            };
-          } catch (error) {
-            console.error('Failed to refresh user after splash:', error);
-          }
-        }
-
-        setPendingUser(normalizeUserProfile(refreshedUser));
+        const refreshedUser = await refreshAndPersistUser(data.user, { persist: false });
+        setPendingUser(refreshedUser);
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
     }
 
     setAuthStep('welcome');
-  }, [fetchLatestUserProfile, pendingPhone, persistUser]);
+  }, [pendingPhone, refreshAndPersistUser]);
 
   const handleWelcomeComplete = useCallback(() => {
     if (pendingUser) {
