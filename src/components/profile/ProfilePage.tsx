@@ -7,7 +7,7 @@ import { ArrowLeft, Edit, Star, MapPin, Mail, Phone, User as UserIcon } from 'lu
 interface ProfilePageProps {
   user: any;
   onBack: () => void;
-  onProfileUpdate: (data: any) => void;
+  onProfileUpdate: (data: any) => Promise<void>;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onBack, onProfileUpdate }) => {
