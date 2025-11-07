@@ -1,62 +1,160 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { LoginForm } from './components/auth/LoginForm';
-import { FarmerSignupForm } from './components/auth/FarmerSignupForm';
-import { ProviderSignupForm } from './components/auth/ProviderSignupForm';
-import { SignupRoleSelector } from './components/auth/SignupRoleSelector';
-import DriverTrackingPage from './components/tracking/DriverTrackingPage';
-import LiveTrackingView from './components/tracking/LiveTrackingView';
-import { SignupSuccessSplash } from './components/auth/SignupSuccessSplash';
-import { WelcomeScreen } from './components/auth/WelcomeScreen';
-import { AdminSignupPage } from './components/auth/AdminSignupPage';
-import { MainApp } from './components/MainApp';
-import { HowItWorks } from './components/HowItWorks';
-import { useUserSession } from './contexts/UserSessionContext';
-import { 
-  Tractor, 
-  Shield, 
-  MapPin, 
-  Users, 
-  CheckCircle, 
+
+import React, { useCallback, useEffect, useState } from "react";
+
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { LoginForm } from "./components/auth/LoginForm";
+import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
+import { ProviderSignupForm } from "./components/auth/ProviderSignupForm";
+import { SignupRoleSelector } from "./components/auth/SignupRoleSelector";
+import DriverTrackingPage from "./components/tracking/DriverTrackingPage";
+import LiveTrackingView from "./components/tracking/LiveTrackingView";
+import { SignupSuccessSplash } from "./components/auth/SignupSuccessSplash";
+import { WelcomeScreen } from "./components/auth/WelcomeScreen";
+import { AdminSignupPage } from "./components/auth/AdminSignupPage";
+import { MainApp } from "./components/MainApp";
+import { HowItWorks } from "./components/HowItWorks";
+
+import { normalizeUserProfile } from "./utils/profile";
+
+import {
+  Tractor,
+  Shield,
+  MapPin,
+  Users,
+  CheckCircle,
   ArrowRight,
   Phone,
   Mail,
   Menu,
-  X
-} from 'lucide-react';
+  X,
+} from "lucide-react";
+
+
+type AuthStep =
+  | 'login'
+  | 'choose-role'
+  | 'signup-farmer'
+  | 'signup-provider'
+  | 'splash'
+  | 'welcome';
 
 const App: React.FC = () => {
-  const { user, initializing, refreshUser, clearUser } = useUserSession();
-  const [authStep, setAuthStep] = useState<
-    'login' | 'choose-role' | 'signup-farmer' | 'signup-provider' | 'splash' | 'welcome'
-  >('login');
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [authStep, setAuthStep] = useState<AuthStep>('login');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>('');
   const [showAuth, setShowAuth] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
-  const handleLoginSuccess = async (loggedInUser: any) => {
-    await refreshUser(loggedInUser.id, loggedInUser);
-    setShowAuth(false);
-  };
-
-  const handleUserUpdate = async (updatedUser: any) => {
-    const targetId = updatedUser?.id ?? user?.id;
-    if (!targetId) {
-      return;
+  const persistUser = useCallback((rawUser: any | null) => {
+    if (!rawUser) {
+      setUser(null);
+      localStorage.removeItem('user');
+      return null;
     }
 
-    const fallbackData = user ? { ...user, ...updatedUser } : updatedUser;
-    await refreshUser(targetId, fallbackData);
-  };
+    const normalizedUser = normalizeUserProfile(rawUser);
+    setUser(normalizedUser);
+    localStorage.setItem('user', JSON.stringify(normalizedUser));
+    return normalizedUser;
+  }, []);
 
-  const handleSignupSuccess = (phone: string) => {
-    setPendingPhone(phone);
-    setAuthStep('splash');
-  };
+  const fetchLatestUserProfile = useCallback(async (userId: string) => {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+      }
+    );
 
-  const handleSplashComplete = async () => {
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to fetch user profile');
+    }
+
+    return data.user;
+  }, []);
+
+  const refreshAndPersistUser = useCallback(
+    async (baseUser: any | null, options: { persist?: boolean } = {}) => {
+      const shouldPersist = options.persist ?? true;
+
+      if (!baseUser) {
+        if (shouldPersist) {
+          persistUser(null);
+        }
+        return null;
+      }
+
+      let mergedUser = baseUser;
+
+      if (baseUser?.id) {
+        try {
+          const latestProfile = await fetchLatestUserProfile(baseUser.id);
+          mergedUser = {
+            ...baseUser,
+            ...latestProfile,
+          };
+        } catch (error) {
+          console.error('Failed to refresh user profile:', error);
+        }
+      }
+
+      const normalizedUser = normalizeUserProfile(mergedUser);
+
+      if (shouldPersist) {
+        persistUser(normalizedUser);
+      }
+
+      return normalizedUser;
+    },
+    [fetchLatestUserProfile, persistUser]
+  );
+
+  // Check for existing user session on mount
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser?.is_verified) {
+          persistUser(parsedUser);
+        }
+      } catch (error) {
+        localStorage.removeItem('user');
+      }
+    }
+    setLoading(false);
+  }, [persistUser]);
+
+  const handleLoginSuccess = useCallback(
+    async (loggedInUser: any) => {
+      await refreshAndPersistUser(loggedInUser, { persist: true });
+    },
+    [refreshAndPersistUser]
+  );
+
+  const handleUserUpdate = useCallback(
+    (updatedUser: any) => {
+      persistUser(updatedUser);
+    },
+    [persistUser]
+  );
+
+  const handleSignupSuccess = useCallback(
+    (phone: string) => {
+      setPendingPhone(phone);
+      setAuthStep('splash');
+    },
+    []
+  );
+
+  const handleSplashComplete = useCallback(async () => {
     // Fetch user data after splash
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`, {
@@ -74,28 +172,29 @@ const App: React.FC = () => {
 
       const data = await response.json();
       if (data.success) {
-        setPendingUser(data.user);
+        const refreshedUser = await refreshAndPersistUser(data.user, { persist: false });
+        setPendingUser(refreshedUser);
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
     }
-    
-    setAuthStep('welcome');
-  };
 
-  const handleWelcomeComplete = async () => {
+    setAuthStep('welcome');
+  }, [pendingPhone, refreshAndPersistUser]);
+
+  const handleWelcomeComplete = useCallback(() => {
     if (pendingUser) {
-      await refreshUser(pendingUser.id, pendingUser);
+      persistUser(pendingUser);
     }
     setAuthStep('login');
     setShowAuth(false);
-  };
+  }, [pendingUser, persistUser]);
 
-  const handleLogout = () => {
-    clearUser();
+  const handleLogout = useCallback(() => {
+    persistUser(null);
     setAuthStep('login');
-  };
-  if (initializing) {
+  }, [persistUser]);
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -140,7 +239,6 @@ const App: React.FC = () => {
       </Router>
     );
   }
-
 
   // Show welcome splash if user just verified
   if (authStep === 'welcome' && pendingUser) {

@@ -93,7 +93,6 @@ serve(async (req) => {
       .select(`
         id,
         name,
-        full_name,
         phone,
         role,
         password_hash,
@@ -112,7 +111,6 @@ serve(async (req) => {
         business_name,
         contact_person,
         service_categories,
-        services_offered,
         service_description,
         service_availability,
         pricing_info,
@@ -152,7 +150,6 @@ serve(async (req) => {
       ...publicUser,
       crop_types: normalizeArrayField(user.crop_types),
       service_categories: normalizeArrayField(user.service_categories),
-      services_offered: normalizeArrayField(user.services_offered),
       equipment_list: normalizeArrayField(user.equipment_list),
     }
 

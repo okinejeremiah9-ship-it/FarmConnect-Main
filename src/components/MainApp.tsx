@@ -23,6 +23,7 @@ import { ServiceMap } from "./map/ServiceMap";
 import { ServiceMarketplace } from "./marketplace/ServiceMarketplace";
 import { UserReviews } from "./reviews/UserReviews";
 import { HowItWorks } from "./HowItWorks";
+import { normalizeUserProfile } from "../utils/profile";
 
 import { BookingsPage } from "./bookings/BookingsPage";
 import { WalletPage } from "./wallet/WalletPage";
@@ -47,10 +48,22 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 
   // ✅ Check profile completion status from session data
   useEffect(() => {
-    if (!user || user.role === "admin") {
-      setShowProfileSetup(false);
-      return;
-    }
+    const checkProfileStatus = async () => {
+      if (!user || user.role === "admin") return;
+
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("profile_completed")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        setShowProfileSetup(!data?.profile_completed);
+      } catch (err) {
+        console.error("Profile check failed:", err);
+      }
+    };
 
     setShowProfileSetup(!user.profile_completed);
   }, [user]);
@@ -92,7 +105,27 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         throw new Error(result.error || "Failed to update profile");
       }
 
-      await onUserUpdate(result.user);
+      const profileResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${user.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+
+      const profileResult = await profileResponse.json();
+
+      if (!profileResponse.ok || !profileResult.success) {
+        throw new Error(profileResult.error || "Failed to refresh profile");
+      }
+
+      onUserUpdate(
+        normalizeUserProfile({
+          ...user,
+          ...profileResult.user,
+        })
+      );
       setShowProfileSetup(false);
       return result.user;
     } catch (error) {
