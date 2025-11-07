@@ -8,10 +8,14 @@ interface Review {
   comment: string;
   created_at: string;
   reviewer_id: string;
-  provider_id: string;
+  reviewee_id: string;
   services?: {
     title: string;
     category: string;
+  };
+  reviewer?: {
+    full_name?: string;
+    name?: string;
   };
 }
 
@@ -54,11 +58,11 @@ export const UserReviews: React.FC<UserReviewsProps> = ({ userId, userName }) =>
     const { data, error } = await supabase
       .from('reviews')
       .select(
-        `id, rating, comment, created_at, reviewer_id, provider_id,
+        `id, rating, comment, created_at, reviewer_id, reviewee_id,
          services (title, category),
-         users!reviews_reviewer_id_fkey (full_name)`
+         reviewer:users!reviews_reviewer_id_fkey (full_name)`
       )
-      .eq('provider_id', userId)
+      .eq('reviewee_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -92,7 +96,7 @@ export const UserReviews: React.FC<UserReviewsProps> = ({ userId, userName }) =>
     }
 
     const { error } = await supabase.from('reviews').insert({
-      provider_id: userId,
+      reviewee_id: userId,
       reviewer_id: currentUser.id,
       rating,
       comment,
@@ -208,7 +212,7 @@ export const UserReviews: React.FC<UserReviewsProps> = ({ userId, userName }) =>
                     <div className="flex items-center mb-1">
                       {renderStars(review.rating)}
                       <span className="ml-2 font-medium text-gray-900">
-                        {review.reviewer_id}
+                        {review.reviewer?.full_name || review.reviewer_id}
                       </span>
                     </div>
                     <div className="flex items-center text-sm text-gray-600">

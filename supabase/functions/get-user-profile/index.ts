@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
         auth: {
           autoRefreshToken: false,
@@ -53,10 +53,10 @@ Deno.serve(async (req: Request) => {
       .select(`
         id,
         name,
-        full_name,
         phone,
         email,
         role,
+        email,
         bio,
         profile_pic,
         farm_size,
