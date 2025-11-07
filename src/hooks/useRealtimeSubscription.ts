@@ -201,6 +201,17 @@ export function useRealtimeBookingUpdates(userId: string) {
   useEffect(() => {
     let channel: RealtimeChannel;
 
+    if (!userId) {
+      // Skip any Supabase calls when the user context hasn't loaded yet.
+      setBookings([]);
+      setLoading(false);
+      return () => {
+        /* no-op */
+      };
+    }
+
+    setLoading(true);
+
     async function fetchBookingById(id: string) {
       const { data, error } = await supabase
         .from('bookings')

@@ -7,7 +7,7 @@ import {
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
-  onLoginSuccess: (user: any) => void;
+  onLoginSuccess: (user: any) => Promise<void> | void;
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLoginSuccess }) => {
@@ -50,7 +50,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         throw new Error(data.error || 'Login failed');
       }
 
-      onLoginSuccess(data.user);
+      await onLoginSuccess(data.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
