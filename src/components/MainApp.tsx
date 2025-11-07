@@ -104,12 +104,23 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           },
           body: JSON.stringify({ ...data, user_id: targetUserId }),
         }
+      }
+
+      await onUserUpdate(
+        normalizeUserProfile({
+          ...user,
+          ...mergedProfile,
+        })
       );
 
-      const result = await response.json();
+      // Ensure the completion flag is persisted so subsequent logins land on the dashboard.
+      const { error: completionError } = await supabase
+        .from("users")
+        .update({ profile_completed: true })
+        .eq("id", targetUserId);
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to update profile");
+      if (completionError) {
+        console.error("Failed to mark profile as completed:", completionError);
       }
 
       const profileResponse = await fetch(
