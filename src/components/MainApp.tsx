@@ -60,7 +60,9 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
+
+        // Only force profile setup when the backend explicitly marks it incomplete.
+        setShowProfileSetup(data?.profile_completed === false);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
@@ -133,6 +135,16 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           ...profileResult.user,
         })
       );
+
+      // Ensure the completion flag is persisted so subsequent logins land on the dashboard.
+      const { error: completionError } = await supabase
+        .from("users")
+        .update({ profile_completed: true })
+        .eq("id", targetUserId);
+
+      if (completionError) {
+        console.error("Failed to mark profile as completed:", completionError);
+      }
       setShowProfileSetup(false);
     } catch (error) {
       console.error("Profile update error:", error);
