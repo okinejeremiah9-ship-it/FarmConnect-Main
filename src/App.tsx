@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+
+import React, { useCallback, useEffect, useState } from "react";
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { LoginForm } from "./components/auth/LoginForm";
 import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
@@ -11,6 +13,9 @@ import { WelcomeScreen } from "./components/auth/WelcomeScreen";
 import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 import { MainApp } from "./components/MainApp";
 import { HowItWorks } from "./components/HowItWorks";
+
+import { normalizeUserProfile } from "./utils/profile";
+
 import {
   Tractor,
   Shield,
@@ -24,17 +29,92 @@ import {
   X,
 } from "lucide-react";
 
+
+type AuthStep =
+  | 'login'
+  | 'choose-role'
+  | 'signup-farmer'
+  | 'signup-provider'
+  | 'splash'
+  | 'welcome';
+
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [authStep, setAuthStep] = useState<
-    'login' | 'choose-role' | 'signup-farmer' | 'signup-provider' | 'splash' | 'welcome'
-  >('login');
+  const [authStep, setAuthStep] = useState<AuthStep>('login');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>('');
   const [showAuth, setShowAuth] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+
+  const persistUser = useCallback((rawUser: any | null) => {
+    if (!rawUser) {
+      setUser(null);
+      localStorage.removeItem('user');
+      return null;
+    }
+
+    const normalizedUser = normalizeUserProfile(rawUser);
+    setUser(normalizedUser);
+    localStorage.setItem('user', JSON.stringify(normalizedUser));
+    return normalizedUser;
+  }, []);
+
+  const fetchLatestUserProfile = useCallback(async (userId: string) => {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to fetch user profile');
+    }
+
+    return data.user;
+  }, []);
+
+  const refreshAndPersistUser = useCallback(
+    async (baseUser: any | null, options: { persist?: boolean } = {}) => {
+      const shouldPersist = options.persist ?? true;
+
+      if (!baseUser) {
+        if (shouldPersist) {
+          persistUser(null);
+        }
+        return null;
+      }
+
+      let mergedUser = baseUser;
+
+      if (baseUser?.id) {
+        try {
+          const latestProfile = await fetchLatestUserProfile(baseUser.id);
+          mergedUser = {
+            ...baseUser,
+            ...latestProfile,
+          };
+        } catch (error) {
+          console.error('Failed to refresh user profile:', error);
+        }
+      }
+
+      const normalizedUser = normalizeUserProfile(mergedUser);
+
+      if (shouldPersist) {
+        persistUser(normalizedUser);
+      }
+
+      return normalizedUser;
+    },
+    [fetchLatestUserProfile, persistUser]
+  );
 
   // Check for existing user session on mount
   useEffect(() => {
@@ -42,32 +122,39 @@ const App: React.FC = () => {
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
-        if (parsedUser.is_verified) {
-          setUser(parsedUser);
+        if (parsedUser?.is_verified) {
+          persistUser(parsedUser);
         }
       } catch (error) {
         localStorage.removeItem('user');
       }
     }
     setLoading(false);
-  }, []);
+  }, [persistUser]);
 
-  const handleLoginSuccess = (loggedInUser: any) => {
-    setUser(loggedInUser);
-    localStorage.setItem('user', JSON.stringify(loggedInUser));
-  };
+  const handleLoginSuccess = useCallback(
+    async (loggedInUser: any) => {
+      await refreshAndPersistUser(loggedInUser, { persist: true });
+    },
+    [refreshAndPersistUser]
+  );
 
-  const handleUserUpdate = (updatedUser: any) => {
-    setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-  };
+  const handleUserUpdate = useCallback(
+    (updatedUser: any) => {
+      persistUser(updatedUser);
+    },
+    [persistUser]
+  );
 
-  const handleSignupSuccess = (phone: string) => {
-    setPendingPhone(phone);
-    setAuthStep('splash');
-  };
+  const handleSignupSuccess = useCallback(
+    (phone: string) => {
+      setPendingPhone(phone);
+      setAuthStep('splash');
+    },
+    []
+  );
 
-  const handleSplashComplete = async () => {
+  const handleSplashComplete = useCallback(async () => {
     // Fetch user data after splash
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`, {
@@ -85,29 +172,28 @@ const App: React.FC = () => {
 
       const data = await response.json();
       if (data.success) {
-        setPendingUser(data.user);
+        const refreshedUser = await refreshAndPersistUser(data.user, { persist: false });
+        setPendingUser(refreshedUser);
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
     }
-    
-    setAuthStep('welcome');
-  };
 
-  const handleWelcomeComplete = () => {
+    setAuthStep('welcome');
+  }, [pendingPhone, refreshAndPersistUser]);
+
+  const handleWelcomeComplete = useCallback(() => {
     if (pendingUser) {
-      setUser(pendingUser);
-      localStorage.setItem('user', JSON.stringify(pendingUser));
+      persistUser(pendingUser);
     }
     setAuthStep('login');
     setShowAuth(false);
-  };
+  }, [pendingUser, persistUser]);
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
+  const handleLogout = useCallback(() => {
+    persistUser(null);
     setAuthStep('login');
-  };
+  }, [persistUser]);
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -120,40 +206,39 @@ const App: React.FC = () => {
   }
 
   // Show authenticated app if user is logged in
-if (user && user.is_verified) {
-  return (
-    <Router>
-      <Routes>
-        <Route path="/admin-signup" element={<AdminSignupPage />} />
+  if (user && user.is_verified) {
+    return (
+      <Router>
+        <Routes>
+          <Route path="/admin-signup" element={<AdminSignupPage />} />
 
-        {/* ✅ Main dashboard area */}
-        <Route
-          path="/*"
-          element={
-            <MainApp
-              user={user}
-              onLogout={handleLogout}
-              onUserUpdate={handleUserUpdate}
-            />
-          }
-        />
+          {/* ✅ Main dashboard area */}
+          <Route
+            path="/*"
+            element={
+              <MainApp
+                user={user}
+                onLogout={handleLogout}
+                onUserUpdate={handleUserUpdate}
+              />
+            }
+          />
 
-        {/* ✅ Driver Tracking Page (GPS-enabled) */}
-        <Route
-          path="/driver-tracking/:sessionId"
-          element={<DriverTrackingPage sessionId={""} />}
-        />
+          {/* ✅ Driver Tracking Page (GPS-enabled) */}
+          <Route
+            path="/driver-tracking/:sessionId"
+            element={<DriverTrackingPage sessionId={""} />}
+          />
 
-        {/* ✅ Live Tracking Map (for viewing driver’s movement) */}
-        <Route
-          path="/live-tracking/:bookingId"
-          element={<LiveTrackingView />}
-        />
-      </Routes>
-    </Router>
-  );
-}
-
+          {/* ✅ Live Tracking Map (for viewing driver’s movement) */}
+          <Route
+            path="/live-tracking/:bookingId"
+            element={<LiveTrackingView />}
+          />
+        </Routes>
+      </Router>
+    );
+  }
 
   // Show welcome splash if user just verified
   if (authStep === 'welcome' && pendingUser) {
