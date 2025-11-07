@@ -1,11 +1,40 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, AuthState, LoginCredentials, RegisterData } from '../types/auth';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { supabase } from "../lib/supabaseClient";
+import { normalizeUserProfile } from "../utils/profile";
+import {
+  AuthState,
+  LoginCredentials,
+  RegisterData,
+  User,
+} from "../types/auth";
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   verifyOTP: (otp: string) => Promise<void>;
+  /**
+   * Normalized setter exposed to consumers so profile updates propagate globally.
+   */
+  setUser: (
+    value: User | Record<string, any> | null | ((prev: any | null) => any | null)
+  ) => void;
+  /**
+   * Forces a Supabase refetch of the authenticated user profile and updates the cache.
+   */
+  refreshUserProfile: (userId?: string) => Promise<void>;
+  /**
+   * Convenience alias for UI components that expect `loading` instead of `isLoading`.
+   */
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -13,166 +42,316 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     isLoading: true,
     isAuthenticated: false,
   });
+  const latestUserRef = useRef<any | null>(null);
 
-  // Helper function to validate UUID format
-  const isValidUUID = (uuid: string): boolean => {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return uuidRegex.test(uuid);
-  };
-
-  useEffect(() => {
-    // Check for existing session
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        // Validate that the user ID is a proper UUID
-        if (user.id && isValidUUID(user.id)) {
-          setAuthState({
-            user,
-            isLoading: false,
-            isAuthenticated: true,
-          });
-        } else {
-          // Clear invalid user data
-          localStorage.removeItem('user');
-          localStorage.removeItem('pendingUser');
-          setAuthState(prev => ({ ...prev, isLoading: false }));
-        }
-      } catch (error) {
-        // Clear corrupted user data
-        localStorage.removeItem('user');
-        localStorage.removeItem('pendingUser');
-        setAuthState(prev => ({ ...prev, isLoading: false }));
-      }
+  const persistUser = useCallback((value: any | null) => {
+    if (value) {
+      localStorage.setItem("user", JSON.stringify(value));
     } else {
-      setAuthState(prev => ({ ...prev, isLoading: false }));
+      localStorage.removeItem("user");
+      localStorage.removeItem("pendingUser");
     }
   }, []);
 
-  const login = async (credentials: LoginCredentials) => {
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-    
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock user data - in real app, this would come from your backend
-      const mockUser: User = {
-        id: credentials.email === 'farmer@test.com' ? '550e8400-e29b-41d4-a716-446655440001' : 
-             credentials.email === 'provider@test.com' ? '550e8400-e29b-41d4-a716-446655440002' : 
-             credentials.email === 'admin@test.com' ? '550e8400-e29b-41d4-a716-446655440003' :
-             crypto.randomUUID(),
-        email: credentials.email,
-        name: credentials.email === 'farmer@test.com' ? 'John Farmer' : 
-              credentials.email === 'provider@test.com' ? 'Jane Provider' : 
-              credentials.email === 'admin@test.com' ? 'Admin User' : 'New User',
-        phone: '+233123456789',
-        role: credentials.email === 'farmer@test.com' ? 'farmer' : 
-              credentials.email === 'provider@test.com' ? 'provider' : 
-              credentials.email === 'admin@test.com' ? 'admin' : 'farmer',
-        isVerified: true,
-        createdAt: new Date().toISOString(),
-      };
+  const setUser = useCallback(
+    (
+      value:
+        | User
+        | Record<string, any>
+        | null
+        | ((prev: any | null) => any | null),
+    ) => {
+      setAuthState((prev) => {
+        const nextValue =
+          typeof value === "function"
+            ? (value as (prev: any | null) => any | null)(prev.user)
+            : value;
+        const normalized = normalizeUserProfile(nextValue ?? null);
 
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      setAuthState({
-        user: mockUser,
-        isLoading: false,
-        isAuthenticated: true,
+        persistUser(normalized);
+        latestUserRef.current = normalized ?? null;
+
+        return {
+          ...prev,
+          user: normalized ?? null,
+          isAuthenticated: Boolean(normalized),
+        };
       });
-    } catch (error) {
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      throw new Error('Login failed');
-    }
-  };
+    },
+    [persistUser],
+  );
 
-  const register = async (data: RegisterData) => {
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-    
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        email: data.email,
-        name: data.name,
-        phone: data.phone,
-        role: data.role,
-        isVerified: false, // Will need OTP verification
-        createdAt: new Date().toISOString(),
-      };
-
-      localStorage.setItem('pendingUser', JSON.stringify(newUser));
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-    } catch (error) {
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      throw new Error('Registration failed');
-    }
-  };
-
-  const verifyOTP = async (otp: string) => {
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-    
-    try {
-      // Simulate OTP verification
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (otp !== '123456') {
-        throw new Error('Invalid OTP');
+  const loadUserProfile = useCallback(
+    async (userId: string, baseUser?: Record<string, any> | null) => {
+      if (!userId) {
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        setUser(null);
+        return;
       }
 
-      const pendingUser = localStorage.getItem('pendingUser');
+      try {
+        setAuthState((prev) => ({ ...prev, isLoading: true }));
+
+        const { data, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        const mergedProfile = {
+          ...(baseUser ?? {}),
+          ...(data ?? {}),
+        };
+
+        setUser(mergedProfile);
+      } catch (error) {
+        console.error("Failed to load user profile:", error);
+
+        if (baseUser) {
+          setUser(baseUser);
+        } else {
+          setUser(null);
+        }
+      } finally {
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+      }
+    },
+    [setUser],
+  );
+
+  const refreshUserProfile = useCallback(
+    async (userId?: string) => {
+      const targetId = userId ?? latestUserRef.current?.id;
+      if (!targetId) {
+        return;
+      }
+
+      const baseUser = latestUserRef.current ?? undefined;
+      await loadUserProfile(targetId, baseUser ?? undefined);
+    },
+    [loadUserProfile],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateFromStorage = () => {
+      const storedUser = localStorage.getItem("user");
+      if (!storedUser) {
+        setUser(null);
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(storedUser);
+        setUser(parsed);
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+      } catch (error) {
+        console.warn("Failed to parse stored user, clearing cache.", error);
+        localStorage.removeItem("user");
+        setUser(null);
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+      }
+    };
+
+    const syncInitialSession = async () => {
+      try {
+        setAuthState((prev) => ({ ...prev, isLoading: true }));
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (error) {
+          console.error("Failed to retrieve Supabase session:", error);
+        }
+
+        if (session?.user?.id) {
+          const baseUser = {
+            ...session.user,
+            ...(session.user.user_metadata ?? {}),
+          };
+          await loadUserProfile(session.user.id, baseUser);
+        } else {
+          hydrateFromStorage();
+        }
+      } catch (error) {
+        console.error("Initial session hydration failed:", error);
+        hydrateFromStorage();
+      }
+    };
+
+    const { data: subscription } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (!isMounted) {
+          return;
+        }
+
+        if (session?.user?.id) {
+          const baseUser = {
+            ...session.user,
+            ...(session.user.user_metadata ?? {}),
+          };
+
+          await loadUserProfile(session.user.id, baseUser);
+        } else {
+          setUser(null);
+          setAuthState((prev) => ({ ...prev, isLoading: false }));
+        }
+      },
+    );
+
+    syncInitialSession();
+
+    return () => {
+      isMounted = false;
+      subscription?.subscription?.unsubscribe();
+    };
+  }, [loadUserProfile, setUser]);
+
+  const login = useCallback(
+    async (credentials: LoginCredentials) => {
+      setAuthState((prev) => ({ ...prev, isLoading: true }));
+
+      try {
+        // Placeholder auth implementation retained for legacy consumers.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const mockUser: User = {
+          id:
+            credentials.email === "farmer@test.com"
+              ? "550e8400-e29b-41d4-a716-446655440001"
+              : credentials.email === "provider@test.com"
+              ? "550e8400-e29b-41d4-a716-446655440002"
+              : credentials.email === "admin@test.com"
+              ? "550e8400-e29b-41d4-a716-446655440003"
+              : crypto.randomUUID(),
+          email: credentials.email,
+          name:
+            credentials.email === "farmer@test.com"
+              ? "John Farmer"
+              : credentials.email === "provider@test.com"
+              ? "Jane Provider"
+              : credentials.email === "admin@test.com"
+              ? "Admin User"
+              : "New User",
+          phone: "+233123456789",
+          role:
+            credentials.email === "farmer@test.com"
+              ? "farmer"
+              : credentials.email === "provider@test.com"
+              ? "provider"
+              : credentials.email === "admin@test.com"
+              ? "admin"
+              : "farmer",
+          isVerified: true,
+          createdAt: new Date().toISOString(),
+        };
+
+        setUser(mockUser);
+      } catch (error) {
+        console.error("Login failed:", error);
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        throw new Error("Login failed");
+      } finally {
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+      }
+    },
+    [setUser],
+  );
+
+  const register = useCallback(
+    async (data: RegisterData) => {
+      setAuthState((prev) => ({ ...prev, isLoading: true }));
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const newUser: User = {
+          id: crypto.randomUUID(),
+          email: data.email,
+          name: data.name,
+          phone: data.phone,
+          role: data.role,
+          isVerified: false,
+          createdAt: new Date().toISOString(),
+        };
+
+        localStorage.setItem("pendingUser", JSON.stringify(newUser));
+      } finally {
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+      }
+    },
+    [],
+  );
+
+  const verifyOTP = useCallback(async (otp: string) => {
+    setAuthState((prev) => ({ ...prev, isLoading: true }));
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      if (otp !== "123456") {
+        throw new Error("Invalid OTP");
+      }
+
+      const pendingUser = localStorage.getItem("pendingUser");
       if (pendingUser) {
         const user = { ...JSON.parse(pendingUser), isVerified: true };
-        localStorage.setItem('user', JSON.stringify(user));
-        localStorage.removeItem('pendingUser');
-        
-        setAuthState({
-          user,
-          isLoading: false,
-          isAuthenticated: true,
-        });
+        setUser(user);
+        localStorage.removeItem("pendingUser");
       }
-    } catch (error) {
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      throw error;
+    } finally {
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
     }
-  };
+  }, [setUser]);
 
-  const logout = () => {
-    localStorage.removeItem('user');
-    localStorage.removeItem('pendingUser');
-    setAuthState({
-      user: null,
-      isLoading: false,
-      isAuthenticated: false,
-    });
-  };
+  const logout = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Supabase sign out failed:", error);
+    } finally {
+      setUser(null);
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
+    }
+  }, [setUser]);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        ...authState,
-        login,
-        register,
-        logout,
-        verifyOTP,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo<AuthContextType>(
+    () => ({
+      ...authState,
+      login,
+      register,
+      logout,
+      verifyOTP,
+      setUser,
+      refreshUserProfile,
+      loading: authState.isLoading,
+    }),
+    [authState, login, logout, refreshUserProfile, register, setUser, verifyOTP],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

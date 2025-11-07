@@ -13,6 +13,7 @@ import { MainApp } from "./components/MainApp";
 import { HowItWorks } from "./components/HowItWorks";
 import { normalizeUserProfile } from "./utils/profile";
 import { fetchUserProfileById } from "./utils/supabaseFunctions";
+import { useAuth } from "./contexts/AuthContext";
 import {
   Tractor,
   Shield,
@@ -35,8 +36,7 @@ type AuthStep =
   | 'welcome';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, setUser, isLoading: authLoading, refreshUserProfile } = useAuth();
   const [authStep, setAuthStep] = useState<AuthStep>('login');
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>('');
@@ -44,18 +44,19 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
-  const persistUser = useCallback((rawUser: any | null) => {
-    if (!rawUser) {
-      setUser(null);
-      localStorage.removeItem('user');
-      return null;
-    }
+  const persistUser = useCallback(
+    (rawUser: any | null) => {
+      if (!rawUser) {
+        setUser(null);
+        return null;
+      }
 
-    const normalizedUser = normalizeUserProfile(rawUser);
-    setUser(normalizedUser);
-    localStorage.setItem('user', JSON.stringify(normalizedUser));
-    return normalizedUser;
-  }, []);
+      const normalizedUser = normalizeUserProfile(rawUser);
+      setUser(normalizedUser ?? null);
+      return normalizedUser;
+    },
+    [setUser]
+  );
 
   const fetchLatestUserProfile = useCallback(async (userId: string) => {
     try {
@@ -111,21 +112,15 @@ const App: React.FC = () => {
     [fetchLatestUserProfile, persistUser]
   );
 
-  // Check for existing user session on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const parsedUser = JSON.parse(storedUser);
-        if (parsedUser?.is_verified) {
-          persistUser(parsedUser);
-        }
-      } catch (error) {
-        localStorage.removeItem('user');
-      }
+    if (!user?.id) {
+      return;
     }
-    setLoading(false);
-  }, [persistUser]);
+
+    refreshUserProfile(user.id).catch((error) => {
+      console.error('Failed to refresh session profile:', error);
+    });
+  }, [refreshUserProfile, user?.id]);
 
   const handleLoginSuccess = useCallback(
     async (loggedInUser: any) => {
@@ -184,12 +179,7 @@ const App: React.FC = () => {
     setAuthStep('login');
     setShowAuth(false);
   }, [pendingUser, persistUser]);
-
-  const handleLogout = useCallback(() => {
-    persistUser(null);
-    setAuthStep('login');
-  }, [persistUser]);
-  if (loading) {
+  if (authLoading && !user) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -208,16 +198,7 @@ const App: React.FC = () => {
           <Route path="/admin-signup" element={<AdminSignupPage />} />
 
           {/* ✅ Main dashboard area */}
-          <Route
-            path="/*"
-            element={
-              <MainApp
-                user={user}
-                onLogout={handleLogout}
-                onUserUpdate={handleUserUpdate}
-              />
-            }
-          />
+          <Route path="/*" element={<MainApp />} />
 
           {/* ✅ Driver Tracking Page (GPS-enabled) */}
           <Route

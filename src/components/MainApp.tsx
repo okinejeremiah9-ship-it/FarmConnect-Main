@@ -1,7 +1,7 @@
 // Location: src/components/MainApp.tsx
 // Purpose: Core navigation & logic handler with permanent profile completion
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
@@ -31,35 +31,36 @@ import { DisputesPage } from "./disputes/DisputesPage";
 
 import DriverTrackingPage from "./tracking/DriverTrackingPage";
 import LiveTrackingView from "./tracking/LiveTrackingView";
+import { useAuth } from "../contexts/AuthContext";
 
-interface MainAppProps {
-  user: any;
-  onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => Promise<void>;
-}
-
-export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
+export const MainApp: React.FC = () => {
+  const { user, setUser, refreshUserProfile, logout } = useAuth();
   const [currentView, setCurrentView] = useState<string>("dashboard");
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [navigationHistory, setNavigationHistory] = useState<string[]>(["dashboard"]);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
-  const latestUserRef = useRef(user);
-  const onUserUpdateRef = useRef(onUserUpdate);
+  const handleLogout = useCallback(() => {
+    logout().catch((error) => {
+      console.error("Failed to logout:", error);
+    });
+  }, [logout]);
 
-  useEffect(() => {
-    latestUserRef.current = user;
-  }, [user]);
-
-  useEffect(() => {
-    onUserUpdateRef.current = onUserUpdate;
-  }, [onUserUpdate]);
+  const applyUserUpdate = useCallback(
+    (updater: (current: any | null) => any | null) => {
+      setUser((current: any | null) => {
+        const next = updater(current);
+        return normalizeUserProfile(next ?? null);
+      });
+    },
+    [setUser],
+  );
 
   // ✅ Check profile completion status once at login
   useEffect(() => {
-    const checkProfileStatus = async () => {
-      if (!user || user.role === "admin") return;
+    if (!user || user.role === "admin") return;
 
+    const checkProfileStatus = async () => {
       try {
         const { data, error } = await supabase
           .from("users")
@@ -80,8 +81,11 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   }, [user]);
 
   useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
     const loadUserProfile = async () => {
-      if (!user?.id) return;
       try {
         const { data, error } = await supabase
           .from("users")
@@ -90,19 +94,17 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
         if (error) throw error;
         if (data) {
-          const currentUser = latestUserRef.current;
-          const updateHandler = onUserUpdateRef.current;
-
-          if (currentUser && updateHandler) {
-            await updateHandler(normalizeUserProfile({ ...currentUser, ...data }));
-          }
+          applyUserUpdate((currentUser) => ({
+            ...(currentUser ?? {}),
+            ...data,
+          }));
         }
       } catch (err) {
         console.error("Error fetching user profile:", err);
       }
     };
     loadUserProfile();
-  }, [user?.id]);
+  }, [applyUserUpdate, user?.id]);
 
   // ✅ Restore ongoing tracking sessions
   useEffect(() => {
@@ -160,12 +162,12 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           }
         }
 
-        await onUserUpdate(
-          normalizeUserProfile({
-            ...user,
-            ...mergedProfile,
-          })
-        );
+        applyUserUpdate((currentUser) => ({
+          ...(currentUser ?? {}),
+          ...mergedProfile,
+        }));
+
+        await refreshUserProfile(targetUserId);
 
         // Ensure the completion flag is persisted so subsequent logins land on the dashboard.
         const { error: completionError } = await supabase
@@ -183,7 +185,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         throw error instanceof Error ? error : new Error("Failed to update profile");
       }
     },
-    [onUserUpdate, user]
+    [applyUserUpdate, refreshUserProfile, user]
   );
 
   // 🧭 Page navigation handler
@@ -328,7 +330,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   };
 
   // 🧑🏾‍🌾 Show profile setup screen once
-  if (showProfileSetup) {
+  if (user && showProfileSetup) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="max-w-4xl w-full">
@@ -343,9 +345,13 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   }
 
   // 🏠 Default app shell
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      <Navigation user={user} onLogout={onLogout} onNavigate={navigateTo} />
+      <Navigation user={user} onLogout={handleLogout} onNavigate={navigateTo} />
       {renderContent()}
       <BottomNav currentView={currentView} onNavigate={navigateTo} role={user.role} />
     </div>
