@@ -1,10 +1,7 @@
 // Location: src/components/MainApp.tsx
-// Purpose: Core navigation container that controls app routing and GPS tracking view transitions.
-
-// Location: src/components/MainApp.tsx
 // Purpose: Core navigation & logic handler with permanent profile completion
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase"; // ✅ Ensure this import exists
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
@@ -24,6 +21,8 @@ import { ServiceMap } from "./map/ServiceMap";
 import { ServiceMarketplace } from "./marketplace/ServiceMarketplace";
 import { UserReviews } from "./reviews/UserReviews";
 import { HowItWorks } from "./HowItWorks";
+import { normalizeUserProfile } from "../utils/profile";
+import { fetchUserProfileById, updateUserProfile as updateUserProfileFn } from "../utils/supabaseFunctions";
 
 import { BookingsPage } from "./bookings/BookingsPage";
 import { WalletPage } from "./wallet/WalletPage";
@@ -36,7 +35,7 @@ import LiveTrackingView from "./tracking/LiveTrackingView";
 interface MainAppProps {
   user: any;
   onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => void;
+  onUserUpdate: (updatedUser: any) => Promise<void>;
 }
 
 export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
@@ -59,7 +58,9 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        setShowProfileSetup(!data?.profile_completed);
+
+        // Only force profile setup when the backend explicitly marks it incomplete.
+        setShowProfileSetup(data?.profile_completed === false);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
@@ -85,33 +86,70 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   }, []);
 
   // ✅ Update profile and mark completed
-  const handleProfileUpdate = async (data: any) => {
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ...data, user_id: user.id }),
+  const handleProfileUpdate = useCallback(
+    async (data: any) => {
+      try {
+        const targetUserIdValue = user?.id ?? user?.user_id;
+        const targetUserId =
+          typeof targetUserIdValue === "string"
+            ? targetUserIdValue.trim()
+            : targetUserIdValue
+            ? String(targetUserIdValue)
+            : "";
+
+        if (!targetUserId) {
+          throw new Error("Missing user identifier. Please sign in again.");
         }
-      );
 
-      const result = await response.json();
+        const updatedProfile = await updateUserProfileFn({
+          ...data,
+          user_id: targetUserId,
+        });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to update profile");
+        let mergedProfile = updatedProfile;
+
+        try {
+          const { user: refreshedProfile } = await fetchUserProfileById(targetUserId);
+
+          if (refreshedProfile) {
+            mergedProfile = {
+              ...mergedProfile,
+              ...refreshedProfile,
+            };
+          }
+        } catch (refreshError) {
+          const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
+
+          if (message !== "User not found") {
+            console.error("Failed to refresh profile:", refreshError);
+          }
+        }
+
+        await onUserUpdate(
+          normalizeUserProfile({
+            ...user,
+            ...mergedProfile,
+          })
+        );
+
+        // Ensure the completion flag is persisted so subsequent logins land on the dashboard.
+        const { error: completionError } = await supabase
+          .from("users")
+          .update({ profile_completed: true })
+          .eq("id", targetUserId);
+
+        if (completionError) {
+          console.error("Failed to mark profile as completed:", completionError);
+        }
+
+        setShowProfileSetup(false);
+      } catch (error) {
+        console.error("Profile update error:", error);
+        throw error instanceof Error ? error : new Error("Failed to update profile");
       }
-
-      onUserUpdate(result.user);
-      setShowProfileSetup(false);
-    } catch (error) {
-      console.error("Profile update error:", error);
-      throw error instanceof Error ? error : new Error("Failed to update profile");
-    }
-  };
+    },
+    [onUserUpdate, user]
+  );
 
   // 🧭 Page navigation handler
   const navigateTo = (view: string, providerId?: string, sessionId?: string) => {
