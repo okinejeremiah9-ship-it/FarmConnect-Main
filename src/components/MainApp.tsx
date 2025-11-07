@@ -1,8 +1,8 @@
 // Location: src/components/MainApp.tsx
 // Purpose: Core navigation & logic handler with permanent profile completion
 
-import React, { useState, useEffect, useCallback } from "react";
-import { supabase } from "../lib/supabase"; // ✅ Ensure this import exists
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "../lib/supabaseClient";
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -44,6 +44,16 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   const [navigationHistory, setNavigationHistory] = useState<string[]>(["dashboard"]);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
+  const latestUserRef = useRef(user);
+  const onUserUpdateRef = useRef(onUserUpdate);
+
+  useEffect(() => {
+    latestUserRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    onUserUpdateRef.current = onUserUpdate;
+  }, [onUserUpdate]);
 
   // ✅ Check profile completion status once at login
   useEffect(() => {
@@ -68,6 +78,31 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 
     checkProfileStatus();
   }, [user]);
+
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      if (!user?.id) return;
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) {
+          const currentUser = latestUserRef.current;
+          const updateHandler = onUserUpdateRef.current;
+
+          if (currentUser && updateHandler) {
+            await updateHandler(normalizeUserProfile({ ...currentUser, ...data }));
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching user profile:", err);
+      }
+    };
+    loadUserProfile();
+  }, [user?.id]);
 
   // ✅ Restore ongoing tracking sessions
   useEffect(() => {
