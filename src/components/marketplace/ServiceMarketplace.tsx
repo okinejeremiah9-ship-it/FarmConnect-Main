@@ -242,6 +242,17 @@ const requestBrowserLocation = () => {
   }, [sessionUser?.id, requestedAnonymousLocation]);
 
   useEffect(() => {
+  if (sessionUser?.id) {
+    setCurrentUser(sessionUser);
+    // ✅ Try fetching from browser location first
+    requestBrowserLocation();
+  } else if (!requestedAnonymousLocation) {
+    requestBrowserLocation();
+    setRequestedAnonymousLocation(true);
+  }
+}, [sessionUser?.id]);
+
+  useEffect(() => {
     if (userLocation && !locationLoading) {
       fetchNearbyProviders(filters);
     }
