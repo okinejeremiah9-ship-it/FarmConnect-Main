@@ -91,28 +91,38 @@ export const ServiceMarketplace: React.FC = () => {
   const [requestedAnonymousLocation, setRequestedAnonymousLocation] = useState(false);
   const { user: sessionUser } = useUserSession();
 
-  const requestBrowserLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationError('Location services are not supported in this browser.');
-      setLocationLoading(false);
-      return;
-    }
+const requestBrowserLocation = () => {
+  if (!navigator.geolocation) {
+    setLocationError('Location services are not supported in this browser.');
+    setLocationLoading(false);
+    return;
+  }
 
-    setLocationLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setLocationSource('browser');
-        setLocationLoading(false);
-      },
-      (error) => {
-        console.error('Browser geolocation failed:', error);
-        setLocationError('We could not determine your location. Update your profile with coordinates to see nearby providers.');
-        setLocationLoading(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
+  setLocationLoading(true);
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+
+      setUserLocation({ lat: latitude, lng: longitude });
+      setLocationSource('browser');
+      setLocationLoading(false);
+
+      // 🔹 Immediately fetch nearby providers with live GPS
+      fetchNearbyProviders({
+        ...filters,
+        radiusKm: filters.radiusKm ?? DEFAULT_RADIUS,
+      });
+    },
+    (error) => {
+      console.error('Browser geolocation failed:', error);
+      setLocationError('We could not access your location. Update your farm profile with coordinates to see nearby providers.');
+      setLocationLoading(false);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+};
+
 
   const mapProviderToListing = (provider: any): ServiceListing => {
     const categories: string[] = Array.isArray(provider.service_categories)
