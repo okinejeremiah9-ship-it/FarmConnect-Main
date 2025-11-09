@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
       throw new Error('Latitude and longitude are required');
     }
 
-    let query = supabaseClient
+    const query = supabaseClient
       .from('users')
       .select(`
         id,

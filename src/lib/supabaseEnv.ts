@@ -22,7 +22,9 @@ const ANON_KEY_ENV_KEYS = [
 ];
 
 const globalAny: Record<string, unknown> | undefined =
-  typeof globalThis !== "undefined" ? (globalThis as Record<string, unknown>) : undefined;
+  typeof globalThis !== "undefined"
+    ? (globalThis as Record<string, unknown>)
+    : undefined;
 
 const processEnv = ((): EnvRecord | undefined => {
   if (!globalAny) {
@@ -38,7 +40,14 @@ const processEnv = ((): EnvRecord | undefined => {
 const runtimeEnvSources: EnvRecord[] = [
   (import.meta.env ?? {}) as EnvRecord,
   ...(processEnv ? [processEnv] : []),
-  ...collectRuntimeEnvCandidates(["__ENV__", "__env__", "__supabase", "__SUPABASE", "__SUPABASE_CONFIG__", "env"]),
+  ...collectRuntimeEnvCandidates([
+    "__ENV__",
+    "__env__",
+    "__supabase",
+    "__SUPABASE",
+    "__SUPABASE_CONFIG__",
+    "env",
+  ]),
 ];
 
 function collectRuntimeEnvCandidates(keys: string[]): EnvRecord[] {
@@ -48,8 +57,9 @@ function collectRuntimeEnvCandidates(keys: string[]): EnvRecord[] {
 
   return keys
     .map((key) => globalAny[key])
-    .filter((value): value is EnvRecord =>
-      typeof value === "object" && value !== null,
+    .filter(
+      (value): value is EnvRecord =>
+        typeof value === "object" && value !== null,
     );
 }
 
@@ -73,7 +83,10 @@ function isMeaningful(value: string | undefined): value is string {
   return trimmed.length > 0 && trimmed !== "undefined" && trimmed !== "null";
 }
 
-function formatMissingEnvMessage(missingUrl: boolean, missingAnonKey: boolean): string {
+function formatMissingEnvMessage(
+  missingUrl: boolean,
+  missingAnonKey: boolean,
+): string {
   const missingParts: string[] = [];
 
   if (missingUrl) {
@@ -87,9 +100,12 @@ function formatMissingEnvMessage(missingUrl: boolean, missingAnonKey: boolean): 
     );
   }
 
-  return `Supabase configuration missing: ${missingParts.join(
-    " and ",
-  )}. Add the values to your environment (see .env.example).`;
+  const missingDescription =
+    missingParts.length > 1
+      ? `${missingParts.slice(0, -1).join(", ")} and ${missingParts[missingParts.length - 1]}`
+      : (missingParts[0] ?? "Supabase credentials (URL and anon key)");
+
+  return `Supabase configuration missing: ${missingDescription}. Add the values to your environment (see .env.example).`;
 }
 
 export function resolveSupabaseConfig(): SupabaseConfig {
