@@ -1,16 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "./supabaseClient";
 
-import { resolveSupabaseConfig } from "./supabaseEnv";
-
-const { url: supabaseUrl, anonKey: supabaseAnonKey } = resolveSupabaseConfig();
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  realtime: {
-    params: {
-      eventsPerSecond: 5,
-    },
-  },
-});
+export { supabase };
 
 export const STORAGE_BUCKETS = {
   AUDIO: "audio-messages",
@@ -35,7 +25,9 @@ export async function uploadFile(
     throw new Error(`Upload failed: ${error.message}`);
   }
 
-  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  const { data: urlData } = supabase.storage
+    .from(bucket)
+    .getPublicUrl(data.path);
 
   return urlData.publicUrl;
 }

@@ -41,7 +41,7 @@ serve(async (req) => {
       throw new Error('User not found')
     }
 
-    let stats = {
+    const stats = {
       activeRequests: 0,
       completedServices: 0,
       totalSpent: 0,
