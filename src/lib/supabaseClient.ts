@@ -1,8 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
-
 import { resolveSupabaseConfig } from "./supabaseEnv";
 
-const supabaseConfig = resolveSupabaseConfig();
-const { url: supabaseUrl, anonKey: supabaseAnonKey } = supabaseConfig;
+const { url, anonKey } = resolveSupabaseConfig();
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!url || !anonKey) {
+  throw new Error("Supabase configuration is missing!");
+}
+
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    persistSession: true,
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
+  },
+});
