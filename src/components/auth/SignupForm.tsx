@@ -4,6 +4,7 @@ import {
   normalizeGhanaPhoneNumber,
   isValidGhanaPhoneNumber,
 } from '../../utils/phone';
+import { useUserSession } from '../../contexts/UserSessionContext';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -14,10 +15,11 @@ interface SignupFormProps {
 export const SignupForm: React.FC<SignupFormProps> = ({
   onSwitchToLogin,
   onSignupSuccess,
-  adminInviteToken
+  adminInviteToken,
 }) => {
-  // DEV MODE: Set to false after initial admin setup
-  // Always true for development - change to false in production
+  const { setUser, refreshUser } = useUserSession();
+
+  // Allow admin creation during development
   const DEV_MODE_ALLOW_ADMIN_SIGNUP = true;
 
   const [formData, setFormData] = useState({
@@ -25,7 +27,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
     phone: '',
     password: '',
     confirmPassword: '',
-    role: adminInviteToken ? 'admin' : 'farmer' as 'farmer' | 'provider' | 'admin',
+    role: adminInviteToken ? 'admin' : ('farmer' as 'farmer' | 'provider' | 'admin'),
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,14 +37,14 @@ export const SignupForm: React.FC<SignupFormProps> = ({
     e.preventDefault();
     setError('');
 
-    // Validation
+    // Validation checks
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError('Password must be at least 6 characters long');
       return;
     }
 
@@ -55,38 +57,56 @@ export const SignupForm: React.FC<SignupFormProps> = ({
 
     try {
       const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          phone: normalizedPhone,
-          password: formData.password,
-          role: formData.role,
-          admin_invite_token: adminInviteToken,
-        }),
-      });
+
+      // 🔹 Call your Supabase Edge Function for signup
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: formData.name,
+            phone: normalizedPhone,
+            password: formData.password,
+            role: formData.role,
+            admin_invite_token: adminInviteToken,
+          }),
+        }
+      );
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(data.error || 'Signup failed');
       }
 
-      // Call success callback with user phone
-      onSignupSuccess(data.user.phone);
+      const newUser = data.user;
+
+      // 🔹 Fetch full profile from Supabase after creation
+      const fullProfile = await refreshUser(newUser.id, newUser);
+
+      // 🔹 Persist to localStorage + context
+      setUser(fullProfile);
+
+      // 🔹 Trigger parent success handler
+      onSignupSuccess(fullProfile);
+
+      alert('✅ Account created successfully! Welcome to FarmConnect.');
     } catch (err) {
+      console.error('Signup Error:', err);
       setError(err instanceof Error ? err.message : 'Signup failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData(prev => ({
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    setFormData((prev) => ({
       ...prev,
       [e.target.name]: e.target.value,
     }));
@@ -105,10 +125,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             {adminInviteToken ? 'Admin Registration' : 'Create Account'}
           </h2>
           <p className="text-gray-600">
-            {adminInviteToken 
-              ? 'Complete your admin account setup' 
-              : 'Join FarmConnect to get started'
-            }
+            {adminInviteToken
+              ? 'Complete your admin account setup'
+              : 'Join FarmConnect to get started'}
           </p>
         </div>
 
@@ -119,6 +138,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Full Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name
@@ -137,6 +157,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             </div>
           </div>
 
+          {/* Phone Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Phone Number
@@ -158,6 +179,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             </p>
           </div>
 
+          {/* Role Selection */}
           {!adminInviteToken && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -184,6 +206,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             </div>
           )}
 
+          {/* Password */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Password
@@ -209,6 +232,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             </div>
           </div>
 
+          {/* Confirm Password */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Confirm Password
@@ -227,6 +251,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             </div>
           </div>
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
