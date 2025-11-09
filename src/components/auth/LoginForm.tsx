@@ -4,13 +4,19 @@ import {
   normalizeGhanaPhoneNumber,
   isValidGhanaPhoneNumber,
 } from '../../utils/phone';
+import { useUserSession } from '../../contexts/UserSessionContext';
 
 interface LoginFormProps {
   onSwitchToRegister: () => void;
   onLoginSuccess: (user: any) => Promise<void> | void;
 }
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLoginSuccess }) => {
+export const LoginForm: React.FC<LoginFormProps> = ({
+  onSwitchToRegister,
+  onLoginSuccess,
+}) => {
+  const { setUser, refreshUser } = useUserSession();
+
   const [formData, setFormData] = useState({
     phone: '',
     password: '',
@@ -25,33 +31,49 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
     setLoading(true);
 
     try {
+      // ✅ Validate and normalize phone number
       if (!isValidGhanaPhoneNumber(formData.phone)) {
         throw new Error('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
       }
 
       const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
-      
-      // Call login API
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: normalizedPhone,
-          password: formData.password,
-        }),
-      });
+
+      // ✅ Authenticate with Edge Function (auth-login)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phone: normalizedPhone,
+            password: formData.password,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Login failed');
+        throw new Error(data.error || 'Login failed. Please check credentials.');
       }
 
-      await onLoginSuccess(data.user);
+      const loggedInUser = data.user;
+
+      // ✅ Fetch full user profile from Supabase
+      const fullProfile = await refreshUser(loggedInUser.id, loggedInUser);
+
+      // ✅ Persist to context + localStorage
+      setUser(fullProfile);
+
+      // ✅ Inform parent (dashboard or redirect handler)
+      await onLoginSuccess(fullProfile);
+
+      alert('✅ Login successful!');
     } catch (err) {
+      console.error('Login Error:', err);
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setLoading(false);
@@ -59,7 +81,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [e.target.name]: e.target.value,
     }));
@@ -79,6 +101,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Phone Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Phone Number
@@ -100,6 +123,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             </p>
           </div>
 
+          {/* Password Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Password
@@ -125,6 +149,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
             </div>
           </div>
 
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
@@ -141,9 +166,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
           </button>
         </form>
 
+        {/* Switch to Register */}
         <div className="mt-6 text-center">
           <p className="text-gray-600">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <button
               onClick={onSwitchToRegister}
               className="text-green-600 hover:text-green-700 font-semibold"
@@ -153,12 +179,15 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
           </p>
         </div>
 
+        {/* Demo Info */}
         <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-          <p className="text-sm text-gray-600 mb-2">Demo Accounts:</p>
+          <p className="text-sm text-gray-600 mb-2">Demo Info:</p>
           <div className="text-xs text-gray-500 space-y-1">
             <p>Create an account to get started</p>
             <p>Phone verification required for all accounts</p>
-            <p><strong>Admin Test:</strong> Sign up with role "Admin" for testing</p>
+            <p>
+              <strong>Admin Test:</strong> Sign up with role "Admin" for testing
+            </p>
           </div>
         </div>
       </div>
