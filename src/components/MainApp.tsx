@@ -92,7 +92,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       const targetUserId = user?.id ?? user?.user_id;
 
       if (!targetUserId) {
-        throw new Error('Missing user identifier. Please sign in again.');
+        throw new Error("Missing user identifier. Please sign in again.");
       }
 
       const response = await fetch(
@@ -114,7 +114,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       }
 
       const profileResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${user.id}`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
         {
           headers: {
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
