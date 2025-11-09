@@ -5,4 +5,14 @@ import { resolveSupabaseConfig } from "./supabaseEnv";
 const supabaseConfig = resolveSupabaseConfig();
 const { url: supabaseUrl, anonKey: supabaseAnonKey } = supabaseConfig;
 
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
+
+const { url: supabaseUrl, anonKey: supabaseAnonKey } = resolveSupabaseConfig();
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);

@@ -7,6 +7,7 @@ import { BookingModal } from '../bookings/BookingModal';
 import { ChatModal } from './ChatModal';
 import { Search, MapPin, Filter, AlertTriangle } from 'lucide-react';
 import { mapAPI } from '../../lib/api';
+import { fetchUserProfileById } from '../../utils/supabaseFunctions';
 import { useUserSession } from '../../contexts/UserSessionContext';
 
 interface Coordinates {
@@ -191,24 +192,27 @@ export const ServiceMarketplace: React.FC = () => {
   const loadProfileLocation = async (userId: string) => {
     setLocationLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-      });
+      const data = await fetchUserProfileById(userId);
+      const profile = data.user;
 
-      const data = await response.json();
-      if (response.ok && data.success) {
-        const profile = data.user;
-        setProfileAddress(profile.address ?? null);
+      setProfileAddress(profile?.address ?? null);
 
-        if (profile.latitude && profile.longitude) {
-          setUserLocation({ lat: parseFloat(profile.latitude), lng: parseFloat(profile.longitude) });
-          setLocationSource('profile');
-          setLocationLoading(false);
-          return;
-        }
+      const latitudeValue = typeof profile?.latitude === 'number'
+        ? profile.latitude
+        : profile?.latitude
+        ? parseFloat(profile.latitude)
+        : null;
+      const longitudeValue = typeof profile?.longitude === 'number'
+        ? profile.longitude
+        : profile?.longitude
+        ? parseFloat(profile.longitude)
+        : null;
+
+      if (latitudeValue !== null && !Number.isNaN(latitudeValue) && longitudeValue !== null && !Number.isNaN(longitudeValue)) {
+        setUserLocation({ lat: latitudeValue, lng: longitudeValue });
+        setLocationSource('profile');
+        setLocationLoading(false);
+        return;
       }
 
       requestBrowserLocation();

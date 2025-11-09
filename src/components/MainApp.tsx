@@ -1,9 +1,8 @@
 // Location: src/components/MainApp.tsx
-// Purpose: Core navigation container that controls app routing and GPS tracking view transitions.
-
-// Location: src/components/MainApp.tsx
 // Purpose: Core navigation & logic handler with permanent profile completion
 
+import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "../lib/supabaseClient";
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { Navigation } from "./Navigation";
@@ -33,6 +32,7 @@ import { DisputesPage } from "./disputes/DisputesPage";
 
 import DriverTrackingPage from "./tracking/DriverTrackingPage";
 import LiveTrackingView from "./tracking/LiveTrackingView";
+import { useAuth } from "../contexts/AuthContext";
 
 interface MainAppProps {
   user: any;
@@ -46,12 +46,27 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   const [navigationHistory, setNavigationHistory] = useState<string[]>(["dashboard"]);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
+  const handleLogout = useCallback(() => {
+    logout().catch((error) => {
+      console.error("Failed to logout:", error);
+    });
+  }, [logout]);
+
+  const applyUserUpdate = useCallback(
+    (updater: (current: any | null) => any | null) => {
+      setUser((current: any | null) => {
+        const next = updater(current);
+        return normalizeUserProfile(next ?? null);
+      });
+    },
+    [setUser],
+  );
 
   // ✅ Check profile completion status from session data
   useEffect(() => {
-    const checkProfileStatus = async () => {
-      if (!user || user.role === "admin") return;
+    if (!user || user.role === "admin") return;
 
+    const checkProfileStatus = async () => {
       try {
         const { data, error } = await supabase
           .from("users")
@@ -69,6 +84,32 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 
     checkProfileStatus();
   }, [user]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    const loadUserProfile = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+        if (error) throw error;
+        if (data) {
+          applyUserUpdate((currentUser) => ({
+            ...(currentUser ?? {}),
+            ...data,
+          }));
+        }
+      } catch (err) {
+        console.error("Error fetching user profile:", err);
+      }
+    };
+    loadUserProfile();
+  }, [applyUserUpdate, user?.id]);
 
   // ✅ Restore ongoing tracking sessions
   useEffect(() => {
@@ -105,13 +146,13 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           },
           body: JSON.stringify({ ...data, user_id: targetUserId }),
         }
-      );
 
-      const result = await response.json();
+        const updatedProfile = await updateUserProfileFn({
+          ...data,
+          user_id: targetUserId,
+        });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to update profile");
-      }
+        let mergedProfile = updatedProfile;
 
       const profileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
@@ -284,7 +325,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   };
 
   // 🧑🏾‍🌾 Show profile setup screen once
-  if (showProfileSetup) {
+  if (user && showProfileSetup) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="max-w-4xl w-full">
@@ -299,9 +340,13 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   }
 
   // 🏠 Default app shell
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      <Navigation user={user} onLogout={onLogout} onNavigate={navigateTo} />
+      <Navigation user={user} onLogout={handleLogout} onNavigate={navigateTo} />
       {renderContent()}
       <BottomNav currentView={currentView} onNavigate={navigateTo} role={user.role} />
     </div>

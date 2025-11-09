@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { CheckCircle, Sparkles } from 'lucide-react';
+import { supabase } from '../../lib/supabaseClient';
 
 interface SignupSuccessSplashProps {
   onComplete: () => Promise<void> | void;
@@ -7,11 +8,36 @@ interface SignupSuccessSplashProps {
 
 export const SignupSuccessSplash: React.FC<SignupSuccessSplashProps> = ({ onComplete }) => {
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       void onComplete();
     }, 3000); // Show for 3 seconds
 
-    return () => clearTimeout(timer);
+    const verifySessionAndProceed = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          console.warn('No active session found after signup.');
+        }
+      } catch (error) {
+        console.error('Failed to verify Supabase session after signup:', error);
+      }
+
+      timer = setTimeout(() => {
+        onComplete();
+      }, 3000);
+    };
+
+    verifySessionAndProceed();
+
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
   }, [onComplete]);
 
   return (

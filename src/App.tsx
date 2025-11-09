@@ -128,6 +128,8 @@ const App: React.FC = () => {
       } catch (error) {
         localStorage.removeItem('user');
       }
+
+      throw error;
     }
     setLoading(false);
   }, [persistUser]);

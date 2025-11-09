@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { ProfileEditor } from './ProfileEditor';
 import { User, MapPin, Star, CreditCard as Edit, Save, X, Camera, Tractor, Users, Shield } from 'lucide-react';
+import { fetchUserProfileById, updateUserProfile } from '../../utils/supabaseFunctions';
 
 interface UserProfileProps {
   userId?: string;
@@ -30,22 +31,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({
 
   const fetchUserProfile = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${profileUserId}`, {
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch profile');
-      }
+      const data = await fetchUserProfileById(profileUserId);
 
       setUser(data.user);
-      setServices(data.services);
-      setReviews(data.reviews);
+      setServices(data.services ?? []);
+      setReviews(data.reviews ?? []);
     } catch (error) {
       console.error('Error fetching profile:', error);
     } finally {
@@ -56,22 +46,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
   const handleSave = async (formData: any) => {
     setSaving(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ...formData, user_id: profileUserId }),
-      });
+      const updated = await updateUserProfile({ ...formData, user_id: profileUserId });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update profile');
-      }
-
-      setUser(data.user);
+      setUser(updated);
       setEditing(false);
     } catch (error) {
       console.error('Error updating profile:', error);
