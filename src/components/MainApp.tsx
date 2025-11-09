@@ -5,6 +5,7 @@
 // Purpose: Core navigation & logic handler with permanent profile completion
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "../lib/supabaseClient";
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -59,14 +60,14 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        const isCompleted = profileRow?.profile_completed ?? false;
+        const isCompleted = data?.profile_completed ?? false;
         setShowProfileSetup(!isCompleted);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
     };
 
-    setShowProfileSetup(!user.profile_completed);
+    checkProfileStatus();
   }, [user]);
 
   // ✅ Restore ongoing tracking sessions
