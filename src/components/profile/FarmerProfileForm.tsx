@@ -24,14 +24,12 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     phone: user.phone || "",
     profile_pic: user.profile_pic || "",
     address: user.address || "",
-    latitude: user.latitude?.toString() || "",
-    longitude: user.longitude?.toString() || "",
+    latitude: user.latitude != null ? String(user.latitude) : "",
+    longitude: user.longitude != null ? String(user.longitude) : "",
     farm_size: user.farm_size || "",
-    crop_types:
-      Array.isArray(user.crop_types) && user.crop_types.length > 0
-        ? user.crop_types
-        : [],
-    num_workers: user.num_workers?.toString() || "",
+    crop_types: Array.isArray(user.crop_types) ? user.crop_types : [],
+    num_workers:
+      typeof user.num_workers === "number" ? String(user.num_workers) : "",
   });
 
   const [newCrop, setNewCrop] = useState("");
@@ -43,34 +41,49 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
 
   // 🔹 Capture current GPS location
   const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude } = pos.coords;
-          setFormData((prev) => ({
-            ...prev,
-            latitude: latitude.toString(),
-            longitude: longitude.toString(),
-          }));
-          alert("📍 Location captured successfully!");
-        },
-        (error) => {
-          console.error("GPS Error:", error);
-          alert("Unable to get your location. Please enable GPS.");
-        },
-        { enableHighAccuracy: true }
-      );
-    } else {
-      alert("Geolocation not supported by this browser.");
+    if (!("geolocation" in navigator)) {
+      alert("Geolocation not supported in this browser.");
+      return;
     }
+    // Some browsers require HTTPS for geolocation
+    if (window.isSecureContext === false) {
+      alert("For accurate GPS capture, please use HTTPS.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setFormData((prev) => ({
+          ...prev,
+          latitude: latitude.toString(),
+          longitude: longitude.toString(),
+        }));
+        alert("📍 Location captured successfully!");
+      },
+      (error) => {
+        console.error("GPS Error:", error);
+        const msg =
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission denied. Please enable and try again."
+            : error.code === error.POSITION_UNAVAILABLE
+            ? "Location unavailable. Ensure clear sky view and try again."
+            : error.code === error.TIMEOUT
+            ? "Location request timed out. Try again."
+            : "Unable to get your location.";
+        alert(msg);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
   };
 
-  // 🔹 Add and remove crops dynamically
+  // 🔹 Add / remove crops
   const addCrop = () => {
-    if (newCrop.trim()) {
+    const value = newCrop.trim();
+    if (value) {
       setFormData((prev) => ({
         ...prev,
-        crop_types: [...prev.crop_types, newCrop.trim()],
+        crop_types: [...prev.crop_types, value],
       }));
       setNewCrop("");
     }
@@ -79,18 +92,32 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
   const removeCrop = (index: number) => {
     setFormData((prev) => ({
       ...prev,
-      crop_types: prev.crop_types.filter((_: any, i: number) => i !== index),
+      crop_types: prev.crop_types.filter((_, i) => i !== index),
     }));
   };
+
+  // 🔹 Safe number parsing
+  const parseFloatOrNull = (v: string) => {
+    if (!v) return null;
+    const n = Number.parseFloat(v);
+    return Number.isNaN(n) ? null : n;
+  };
+
+  const parseIntOrNull = (v: string) => {
+    if (!v) return null;
+    const n = Number.parseInt(v, 10);
+    return Number.isNaN(n) ? null : n;
+    };
 
   // 🔹 Save and persist profile
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
 
     try {
       const normalizedCrops = Array.isArray(formData.crop_types)
-        ? formData.crop_types.map((crop) => crop.trim()).filter(Boolean)
+        ? formData.crop_types.map((c) => String(c).trim()).filter(Boolean)
         : [];
 
       const updateData = {
@@ -98,13 +125,11 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
         email: formData.email || null,
         address: formData.address || null,
         profile_pic: formData.profile_pic || null,
-        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+        latitude: parseFloatOrNull(formData.latitude),
+        longitude: parseFloatOrNull(formData.longitude),
         farm_size: formData.farm_size || null,
-        crop_types: normalizedCrops.length > 0 ? normalizedCrops : null,
-        num_workers: formData.num_workers
-          ? parseInt(formData.num_workers)
-          : null,
+        crop_types: normalizedCrops.length ? normalizedCrops : null,
+        num_workers: parseIntOrNull(formData.num_workers),
         profile_completed: true,
       };
 
@@ -292,7 +317,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
             <div className="flex flex-wrap gap-2">
               {formData.crop_types.map((crop, index) => (
                 <span
-                  key={index}
+                  key={`${crop}-${index}`}
                   className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm flex items-center"
                 >
                   {crop}
