@@ -59,6 +59,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onLogi
       }
 
       await onLoginSuccess(normalizeUserProfile(profile));
+      await onLoginSuccess(data.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

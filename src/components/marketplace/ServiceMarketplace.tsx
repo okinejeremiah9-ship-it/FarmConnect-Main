@@ -8,6 +8,7 @@ import { ChatModal } from './ChatModal';
 import { Search, MapPin, Filter, AlertTriangle } from 'lucide-react';
 import { mapAPI } from '../../lib/api';
 import { fetchUserProfileById } from '../../utils/supabaseFunctions';
+import { useUserSession } from '../../contexts/UserSessionContext';
 
 interface Coordinates {
   lat: number;
@@ -88,6 +89,8 @@ export const ServiceMarketplace: React.FC = () => {
   const [profileAddress, setProfileAddress] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: string; name?: string; role?: string } | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [requestedAnonymousLocation, setRequestedAnonymousLocation] = useState(false);
+  const { user: sessionUser } = useUserSession();
 
   const requestBrowserLocation = () => {
     if (!navigator.geolocation) {
@@ -220,22 +223,17 @@ export const ServiceMarketplace: React.FC = () => {
   };
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        const parsed = JSON.parse(storedUser);
-        if (parsed?.id) {
-          setCurrentUser(parsed);
-          loadProfileLocation(parsed.id);
-          return;
-        }
-      } catch (error) {
-        console.warn('Failed to parse stored user session:', error);
-      }
+    if (sessionUser?.id) {
+      setCurrentUser(sessionUser);
+      loadProfileLocation(sessionUser.id);
+      return;
     }
 
-    requestBrowserLocation();
-  }, []);
+    if (!requestedAnonymousLocation) {
+      requestBrowserLocation();
+      setRequestedAnonymousLocation(true);
+    }
+  }, [sessionUser?.id, requestedAnonymousLocation]);
 
   useEffect(() => {
     if (userLocation && !locationLoading) {

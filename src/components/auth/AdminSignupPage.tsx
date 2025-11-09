@@ -4,10 +4,12 @@ import { SignupForm } from './SignupForm';
 import { OTPVerificationForm } from './OTPVerificationForm';
 import { WelcomeSplash } from './WelcomeSplash';
 import { AlertTriangle, Loader } from 'lucide-react';
+import { useUserSession } from '../../contexts/UserSessionContext';
 
 export const AdminSignupPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { refreshUser } = useUserSession();
   const [step, setStep] = useState<'signup' | 'otp' | 'welcome'>('signup');
   const [phone, setPhone] = useState('');
   const [user, setUser] = useState<any>(null);
@@ -61,8 +63,9 @@ export const AdminSignupPage: React.FC = () => {
   };
 
   const handleWelcomeComplete = () => {
-    // Store user and redirect to admin dashboard
-    localStorage.setItem('user', JSON.stringify(user));
+    if (user?.id) {
+      void refreshUser(user.id, user);
+    }
     navigate('/');
   };
 

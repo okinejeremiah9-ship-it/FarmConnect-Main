@@ -3,12 +3,15 @@ import { CheckCircle, Sparkles } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 
 interface SignupSuccessSplashProps {
-  onComplete: () => void;
+  onComplete: () => Promise<void> | void;
 }
 
 export const SignupSuccessSplash: React.FC<SignupSuccessSplashProps> = ({ onComplete }) => {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const timer = setTimeout(() => {
+      void onComplete();
+    }, 3000); // Show for 3 seconds
 
     const verifySessionAndProceed = async () => {
       try {

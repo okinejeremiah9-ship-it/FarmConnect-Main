@@ -11,3 +11,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
 });
+
+const { url: supabaseUrl, anonKey: supabaseAnonKey } = resolveSupabaseConfig();
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import React, { useState, useEffect } from "react";
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -22,7 +23,6 @@ import { ServiceMarketplace } from "./marketplace/ServiceMarketplace";
 import { UserReviews } from "./reviews/UserReviews";
 import { HowItWorks } from "./HowItWorks";
 import { normalizeUserProfile } from "../utils/profile";
-import { fetchUserProfileById, updateUserProfile as updateUserProfileFn } from "../utils/supabaseFunctions";
 
 import { BookingsPage } from "./bookings/BookingsPage";
 import { WalletPage } from "./wallet/WalletPage";
@@ -33,8 +33,13 @@ import DriverTrackingPage from "./tracking/DriverTrackingPage";
 import LiveTrackingView from "./tracking/LiveTrackingView";
 import { useAuth } from "../contexts/AuthContext";
 
-export const MainApp: React.FC = () => {
-  const { user, setUser, refreshUserProfile, logout } = useAuth();
+interface MainAppProps {
+  user: any;
+  onLogout: () => void;
+  onUserUpdate: (updatedUser: any) => Promise<void> | void;
+}
+
+export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
   const [currentView, setCurrentView] = useState<string>("dashboard");
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [navigationHistory, setNavigationHistory] = useState<string[]>(["dashboard"]);
@@ -56,7 +61,7 @@ export const MainApp: React.FC = () => {
     [setUser],
   );
 
-  // ✅ Check profile completion status once at login
+  // ✅ Check profile completion status from session data
   useEffect(() => {
     if (!user || user.role === "admin") return;
 
@@ -69,15 +74,14 @@ export const MainApp: React.FC = () => {
           .maybeSingle();
 
         if (error) throw error;
-
-        // Only force profile setup when the backend explicitly marks it incomplete.
-        setShowProfileSetup(data?.profile_completed === false);
+        const isCompleted = profileRow?.profile_completed ?? false;
+        setShowProfileSetup(!isCompleted);
       } catch (err) {
         console.error("Profile check failed:", err);
       }
     };
 
-    checkProfileStatus();
+    setShowProfileSetup(!user.profile_completed);
   }, [user]);
 
   useEffect(() => {
@@ -123,19 +127,23 @@ export const MainApp: React.FC = () => {
   }, []);
 
   // ✅ Update profile and mark completed
-  const handleProfileUpdate = useCallback(
-    async (data: any) => {
-      try {
-        const targetUserIdValue = user?.id ?? user?.user_id;
-        const targetUserId =
-          typeof targetUserIdValue === "string"
-            ? targetUserIdValue.trim()
-            : targetUserIdValue
-            ? String(targetUserIdValue)
-            : "";
+  const handleProfileUpdate = async (data: any) => {
+    try {
+      const targetUserId = user?.id ?? user?.user_id;
 
-        if (!targetUserId) {
-          throw new Error("Missing user identifier. Please sign in again.");
+      if (!targetUserId) {
+        throw new Error('Missing user identifier. Please sign in again.');
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ...data, user_id: targetUserId }),
         }
 
         const updatedProfile = await updateUserProfileFn({
@@ -145,48 +153,34 @@ export const MainApp: React.FC = () => {
 
         let mergedProfile = updatedProfile;
 
-        try {
-          const { user: refreshedProfile } = await fetchUserProfileById(targetUserId);
-
-          if (refreshedProfile) {
-            mergedProfile = {
-              ...mergedProfile,
-              ...refreshedProfile,
-            };
-          }
-        } catch (refreshError) {
-          const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
-
-          if (message !== "User not found") {
-            console.error("Failed to refresh profile:", refreshError);
-          }
+      const profileResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${user.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
         }
+      );
 
-        applyUserUpdate((currentUser) => ({
-          ...(currentUser ?? {}),
-          ...mergedProfile,
-        }));
+      const profileResult = await profileResponse.json();
 
-        await refreshUserProfile(targetUserId);
-
-        // Ensure the completion flag is persisted so subsequent logins land on the dashboard.
-        const { error: completionError } = await supabase
-          .from("users")
-          .update({ profile_completed: true })
-          .eq("id", targetUserId);
-
-        if (completionError) {
-          console.error("Failed to mark profile as completed:", completionError);
-        }
-
-        setShowProfileSetup(false);
-      } catch (error) {
-        console.error("Profile update error:", error);
-        throw error instanceof Error ? error : new Error("Failed to update profile");
+      if (!profileResponse.ok || !profileResult.success) {
+        throw new Error(profileResult.error || "Failed to refresh profile");
       }
-    },
-    [applyUserUpdate, refreshUserProfile, user]
-  );
+
+      onUserUpdate(
+        normalizeUserProfile({
+          ...user,
+          ...profileResult.user,
+        })
+      );
+      setShowProfileSetup(false);
+      return result.user;
+    } catch (error) {
+      console.error("Profile update error:", error);
+      throw error instanceof Error ? error : new Error("Failed to update profile");
+    }
+  };
 
   // 🧭 Page navigation handler
   const navigateTo = (view: string, providerId?: string, sessionId?: string) => {
