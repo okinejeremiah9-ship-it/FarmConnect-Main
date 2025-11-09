@@ -137,22 +137,6 @@ interface UseGeolocationCaptureResult {
   reset: () => void;
 }
 
-export const useGeolocationCapture = (
-  options: GeolocationCaptureOptions = {}
-): UseGeolocationCaptureResult => {
-  const { enableHighAccuracy = true, timeout = 15000, maximumAge = 0 } = options;
-
-  const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
-
-  const reset = useCallback(() => {
-    setCoordinates(null);
-    setStatus(null);
-    setError(null);
-  }, []);
-
   const captureLocation = useCallback(() => {
     if (!('geolocation' in navigator)) {
       setError('Geolocation is not supported in this browser.');
