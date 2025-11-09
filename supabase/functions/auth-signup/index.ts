@@ -7,107 +7,57 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// DEV MODE: Set to false after initial admin setup
+// DEV MODE: Allow Admin signups without token (disable later)
 const DEV_MODE_ALLOW_ADMIN_SIGNUP = true;
 
+// --- Utilities --------------------------------------------------
 function normalizePhoneNumber(phone: string): string {
-  const digitsOnly = phone.replace(/\D/g, '');
-  
-  if (digitsOnly.startsWith('0')) {
-    return '+233' + digitsOnly.substring(1);
-  }
-  
-  if (digitsOnly.startsWith('233')) {
-    return '+' + digitsOnly;
-  }
-  
-  if (phone.startsWith('+233')) {
-    return phone;
-  }
-  
-  return '+233' + digitsOnly;
+  const digitsOnly = phone.replace(/\D/g, "");
+  if (digitsOnly.startsWith("0")) return "+233" + digitsOnly.substring(1);
+  if (digitsOnly.startsWith("233")) return "+" + digitsOnly;
+  if (phone.startsWith("+233")) return phone;
+  return "+233" + digitsOnly;
 }
 
 async function hashPassword(password: string): Promise<string> {
-  const salt = 'farmconnect_salt_2025';
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + salt);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const salt = "farmconnect_salt_2025";
+  const data = new TextEncoder().encode(password + salt);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isNaN(value) ? null : value;
-  }
-
-  if (typeof value === 'string') {
-    const parsed = parseFloat(value);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  return null;
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isNaN(n) ? null : n;
 }
 
 function toIntOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-
-  if (typeof value === 'number') {
-    return Number.isNaN(value) ? null : Math.trunc(value);
-  }
-
-  if (typeof value === 'string') {
-    const parsed = parseInt(value, 10);
-    return Number.isNaN(parsed) ? null : parsed;
-  }
-
-  return null;
+  const n = parseInt(String(value), 10);
+  return Number.isNaN(n) ? null : n;
 }
 
 function toStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => (typeof item === 'string' ? item.trim() : String(item)))
-      .filter((item) => item.length > 0);
-  }
-
-  if (typeof value === 'string') {
-    return value
-      .split(',')
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  }
-
+  if (Array.isArray(value)) return value.map(String).map((v) => v.trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((v) => v.trim()).filter(Boolean);
   return [];
 }
 
+// --- Handler ----------------------------------------------------
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
+    const body = await req.json();
     const {
       name,
       phone,
@@ -118,162 +68,134 @@ Deno.serve(async (req: Request) => {
       address,
       latitude,
       longitude,
-      profile_completed,
       ...roleSpecificFields
-    } = await req.json();
+    } = body;
 
     if (!phone || !password || !role) {
-      throw new Error('Missing required fields: phone, password, and role are required');
+      throw new Error("Missing required fields: phone, password, and role are required");
     }
 
-    if (!['farmer', 'provider', 'admin'].includes(role)) {
-      throw new Error('Invalid role. Must be farmer, provider, or admin');
+    if (!["farmer", "provider", "admin"].includes(role)) {
+      throw new Error("Invalid role. Must be farmer, provider, or admin");
     }
 
-    // Admin role validation
-    if (role === 'admin') {
-      // In DEV MODE, allow admin signup without invite token
+    // 🧩 Admin invite validation
+    if (role === "admin") {
       if (!DEV_MODE_ALLOW_ADMIN_SIGNUP && !admin_invite_token) {
-        throw new Error('Admin registration requires a valid invite token');
+        throw new Error("Admin registration requires a valid invite token");
       }
-      
-      // If invite token provided, validate it
+
       if (admin_invite_token) {
-        const { data: invite, error: inviteError } = await supabaseClient
-          .from('admin_invites')
-          .select('*')
-          .eq('invite_token', admin_invite_token)
-          .eq('is_used', false)
-          .gt('expires_at', new Date().toISOString())
+        const { data: invite, error: inviteError } = await supabaseAdmin
+          .from("admin_invites")
+          .select("*")
+          .eq("invite_token", admin_invite_token)
+          .eq("is_used", false)
+          .gt("expires_at", new Date().toISOString())
           .maybeSingle();
 
-        if (inviteError || !invite) {
-          throw new Error('Invalid or expired admin invite token');
-        }
+        if (inviteError || !invite) throw new Error("Invalid or expired admin invite token");
       }
     }
 
     const normalizedPhone = normalizePhoneNumber(phone);
-
     if (!normalizedPhone.match(/^\+233\d{9}$/)) {
-      throw new Error('Invalid Ghana phone number format. Please use format: 0XXXXXXXXX or +233XXXXXXXXX');
+      throw new Error("Invalid Ghana phone number format (expected +233XXXXXXXXX or 0XXXXXXXXX)");
     }
 
-    const { data: existingUser } = await supabaseClient
-      .from('users')
-      .select('id, phone')
-      .eq('phone', normalizedPhone)
+    // 🧩 Ensure not already registered
+    const { data: existingUser } = await supabaseAdmin
+      .from("users")
+      .select("id, phone")
+      .eq("phone", normalizedPhone)
       .maybeSingle();
 
     if (existingUser) {
-      throw new Error('Phone number already registered. Please use a different number or try logging in.');
+      throw new Error("Phone number already registered. Please log in instead.");
     }
 
-    const hashedPassword = await hashPassword(password);
+    // 🧩 Create Auth user
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      phone: normalizedPhone,
+      email: email || undefined,
+      password,
+      phone_confirm: true,
+      email_confirm: true,
+    });
+    if (authError) throw new Error("Failed to create Auth user: " + authError.message);
 
-    const latitudeValue = toNumberOrNull(latitude);
-    const longitudeValue = toNumberOrNull(longitude);
+    const userId = authData.user?.id;
+    if (!userId) throw new Error("Failed to retrieve new Auth user ID");
 
+    // 🧩 Build database record
     const insertData: Record<string, any> = {
-      name: name || 'User',
+      id: userId,
+      name: name || "User",
       phone: normalizedPhone,
       email: email ?? null,
       role,
-      password_hash: hashedPassword,
+      address: address ?? null,
+      password_hash: await hashPassword(password),
       is_verified: true,
       rating: 0.0,
       total_reviews: 0,
-      address: address ?? null,
-      latitude: latitudeValue,
-      longitude: longitudeValue,
+      latitude: toNumberOrNull(latitude),
+      longitude: toNumberOrNull(longitude),
+      profile_completed: false,
     };
 
-    if (typeof profile_completed === 'boolean') {
-      insertData.profile_completed = profile_completed;
-    } else if (role !== 'admin') {
-      insertData.profile_completed = false;
+    // 🧩 Role-specific fields
+    if (role === "farmer") {
+      insertData.farm_size = roleSpecificFields.farm_size || null;
+      insertData.crop_types = toStringArray(roleSpecificFields.crop_types);
+      insertData.num_workers = toIntOrNull(roleSpecificFields.num_workers);
+      if (!insertData.farm_size || insertData.crop_types.length === 0) {
+        throw new Error("Farmer registration requires farm size and crop types");
+      }
     }
 
-    if (role === 'farmer') {
-      const cropTypes = toStringArray(roleSpecificFields.crop_types);
-      const numWorkers = toIntOrNull(roleSpecificFields.num_workers);
-
-      if (!roleSpecificFields.farm_size || cropTypes.length === 0) {
-        throw new Error('Farmer registration requires farm size and crop types');
-      }
-
-      insertData.farm_size = roleSpecificFields.farm_size;
-      insertData.crop_types = cropTypes.length > 0 ? cropTypes : null;
-      insertData.num_workers = numWorkers;
-    }
-
-    if (role === 'provider') {
-      const serviceCategories = toStringArray(roleSpecificFields.service_categories);
-      const yearsExperience = toIntOrNull(roleSpecificFields.years_experience);
-
-      if (!roleSpecificFields.business_name || serviceCategories.length === 0 || !roleSpecificFields.service_description) {
-        throw new Error('Provider registration requires business details and service information');
-      }
-
-      insertData.name = roleSpecificFields.contact_person || name || 'User';
-      insertData.business_name = roleSpecificFields.business_name;
+    if (role === "provider") {
+      insertData.business_name = roleSpecificFields.business_name || null;
       insertData.contact_person = roleSpecificFields.contact_person || name || null;
-      insertData.service_categories = serviceCategories.length > 0 ? serviceCategories : null;
-      insertData.service_description = roleSpecificFields.service_description;
+      insertData.service_categories = toStringArray(roleSpecificFields.service_categories);
+      insertData.service_description = roleSpecificFields.service_description || null;
       insertData.pricing_info = roleSpecificFields.pricing_info ?? null;
-      insertData.years_experience = yearsExperience;
+      insertData.years_experience = toIntOrNull(roleSpecificFields.years_experience);
+      if (!insertData.business_name || !insertData.service_description) {
+        throw new Error("Provider registration requires business name and service description");
+      }
     }
 
-    const { data: user, error: userError } = await supabaseClient
-      .from('users')
+    // 🧩 Insert into users table
+    const { data: user, error: userError } = await supabaseAdmin
+      .from("users")
       .insert(insertData)
-      .select('id, name, phone, role, is_verified, created_at')
-      .maybeSingle();
+      .select("id, name, phone, role, created_at")
+      .single();
 
-    if (userError || !user) {
-      console.error('Database error:', userError);
-      throw new Error('Failed to create user account: ' + userError?.message);
-    }
+    if (userError) throw new Error("Failed to insert user record: " + userError.message);
 
-    if (role === 'admin' && admin_invite_token) {
-      await supabaseClient
-        .from('admin_invites')
-        .update({
-          is_used: true,
-          used_by: user.id,
-        })
-        .eq('invite_token', admin_invite_token);
+    // 🧩 Mark admin invite used
+    if (role === "admin" && admin_invite_token) {
+      await supabaseAdmin
+        .from("admin_invites")
+        .update({ is_used: true, used_by: user.id })
+        .eq("invite_token", admin_invite_token);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Account created successfully',
-        user: {
-          id: user.id,
-          name: user.name,
-          phone: user.phone,
-          role: user.role,
-          is_verified: user.is_verified,
-          created_at: user.created_at,
-        },
+        message: "Account created successfully",
+        user: { ...user, is_verified: true },
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {
-    console.error('Signup error:', error);
-    return new Response(
-      JSON.stringify({ 
-        success: false,
-        error: error.message 
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      }
-    );
+    console.error("Signup error:", error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+    });
   }
 });
