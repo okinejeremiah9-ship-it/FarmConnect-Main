@@ -1,70 +1,52 @@
 // Location: src/components/profile/FarmerProfileForm.tsx
-// Purpose: Permanent completion profile form for farmers
+// Purpose: Persistent profile form for farmers (uses Supabase + context sync)
 
 import React, { useState } from "react";
 import { User, MapPin, X, Plus } from "lucide-react";
+import { useUserSession } from "../../contexts/UserSessionContext";
 
 interface FarmerProfileFormProps {
   user: any;
-  onSave: (data: any) => Promise<void>;
   onCancel?: () => void;
-  saving?: boolean;
   isFirstTime?: boolean;
 }
 
 export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
   user,
-  onSave,
   onCancel,
-  saving = false,
   isFirstTime = false,
 }) => {
+  const { updateProfile, refreshUser } = useUserSession();
+
   const [formData, setFormData] = useState({
     name: user.name || "",
     email: user.email || "",
     phone: user.phone || "",
     profile_pic: user.profile_pic || "",
     address: user.address || "",
-    latitude: user.latitude || "",
-    longitude: user.longitude || "",
+    latitude: user.latitude?.toString() || "",
+    longitude: user.longitude?.toString() || "",
     farm_size: user.farm_size || "",
-    crop_types: user.crop_types || [],
-    num_workers: user.num_workers || "",
+    crop_types:
+      Array.isArray(user.crop_types) && user.crop_types.length > 0
+        ? user.crop_types
+        : [],
+    num_workers: user.num_workers?.toString() || "",
   });
 
   const [newCrop, setNewCrop] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const addCrop = () => {
-    if (newCrop.trim()) {
-      setFormData((prev) => ({
-        ...prev,
-        crop_types: [...prev.crop_types, newCrop.trim()],
-      }));
-      setNewCrop("");
-    }
-  };
-
-  const removeCrop = (index: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      crop_types: prev.crop_types.filter((_: any, i: number) => i !== index),
-    }));
-  };
-
-  // 🔹 Get GPS Coordinates
+  // 🔹 Capture current GPS location
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
           setFormData((prev) => ({
             ...prev,
             latitude: latitude.toString(),
@@ -83,43 +65,63 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     }
   };
 
-  // 🔹 Submit Handler (Save + Mark as Completed)
+  // 🔹 Add and remove crops dynamically
+  const addCrop = () => {
+    if (newCrop.trim()) {
+      setFormData((prev) => ({
+        ...prev,
+        crop_types: [...prev.crop_types, newCrop.trim()],
+      }));
+      setNewCrop("");
+    }
+  };
+
+  const removeCrop = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      crop_types: prev.crop_types.filter((_: any, i: number) => i !== index),
+    }));
+  };
+
+  // 🔹 Save and persist profile
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
-    const normalizedCrops = Array.isArray(formData.crop_types)
-      ? formData.crop_types.map((crop: string) => crop.trim()).filter(Boolean)
-      : [];
-
-    const updateData = {
-      name: formData.name,
-      email: formData.email || null,
-      profile_pic: formData.profile_pic || null,
-      address: formData.address || null,
-      latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-      longitude: formData.longitude ? parseFloat(formData.longitude) : null,
-      farm_size: formData.farm_size || null,
-      crop_types: normalizedCrops.length > 0 ? normalizedCrops : null,
-      num_workers: formData.num_workers
-        ? parseInt(formData.num_workers as string)
-        : null,
-      profile_completed: true,
-    };
-
     try {
-      await onSave(updateData);
-      alert("✅ Profile saved successfully!");
-    } catch (err) {
-      console.error("Profile update error:", err);
-      alert("Failed to save profile. Please try again.");
+      const normalizedCrops = Array.isArray(formData.crop_types)
+        ? formData.crop_types.map((crop) => crop.trim()).filter(Boolean)
+        : [];
+
+      const updateData = {
+        name: formData.name,
+        email: formData.email || null,
+        address: formData.address || null,
+        profile_pic: formData.profile_pic || null,
+        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
+        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+        farm_size: formData.farm_size || null,
+        crop_types: normalizedCrops.length > 0 ? normalizedCrops : null,
+        num_workers: formData.num_workers
+          ? parseInt(formData.num_workers)
+          : null,
+        profile_completed: true,
+      };
+
+      await updateProfile(updateData);
+      await refreshUser(user.id);
+
+      alert("✅ Farmer profile saved successfully and synced!");
+    } catch (error) {
+      console.error("Profile update failed:", error);
+      alert("❌ Failed to save profile. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 max-h-[90vh] overflow-y-auto border border-green-100">
+    <div className="bg-white rounded-xl shadow-md p-6 border border-green-100 max-h-[90vh] overflow-y-auto">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">
@@ -132,10 +134,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
           </p>
         </div>
         {onCancel && !isFirstTime && (
-          <button
-            onClick={onCancel}
-            className="text-gray-400 hover:text-gray-600"
-          >
+          <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
             <X className="w-6 h-6" />
           </button>
         )}
@@ -162,9 +161,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
             <input
               type="url"
               value={formData.profile_pic}
-              onChange={(e) =>
-                handleInputChange("profile_pic", e.target.value)
-              }
+              onChange={(e) => handleInputChange("profile_pic", e.target.value)}
               placeholder="https://example.com/photo.jpg"
               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
             />
@@ -226,23 +223,25 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
           />
         </div>
 
-        {/* Location capture */}
-        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        {/* GPS capture */}
+        <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col md:flex-row items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-blue-900">Farm location</p>
+            <p className="text-sm font-medium text-blue-900">Farm Location</p>
             <p className="text-sm text-blue-700">
               {formData.latitude && formData.longitude
-                ? `Location captured: ${Number.parseFloat(formData.latitude).toFixed(4)}, ${Number.parseFloat(formData.longitude).toFixed(4)}`
-                : 'We will automatically capture your GPS coordinates when you click capture location so nearby services can find you.'}
+                ? `Captured: ${parseFloat(formData.latitude).toFixed(4)}, ${parseFloat(
+                    formData.longitude
+                  ).toFixed(4)}`
+                : "Capture your GPS coordinates to find nearby providers easily."}
             </p>
           </div>
           <button
             type="button"
             onClick={getCurrentLocation}
-            className="inline-flex items-center justify-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mt-2 md:mt-0"
           >
-            <MapPin className="w-4 h-4 mr-2" />
-            Capture location
+            <MapPin className="w-4 h-4 mr-2 inline" />
+            Capture Location
           </button>
         </div>
 
@@ -272,9 +271,12 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
                 type="text"
                 value={newCrop}
                 onChange={(e) => setNewCrop(e.target.value)}
-                onKeyPress={(e) =>
-                  e.key === "Enter" && (e.preventDefault(), addCrop())
-                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addCrop();
+                  }
+                }}
                 placeholder="Add crop type (e.g., Maize, Rice)"
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
               />
@@ -310,7 +312,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
         {/* Submit */}
         <button
           type="submit"
-          disabled={saving || loading || formData.crop_types.length === 0}
+          disabled={loading || formData.crop_types.length === 0}
           className={`w-full py-3 rounded-lg font-semibold text-white transition ${
             loading ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"
           }`}
