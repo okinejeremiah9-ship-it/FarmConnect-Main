@@ -1,3 +1,5 @@
+// src/lib/api.ts
+
 const API_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 const API_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -20,12 +22,14 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   return data;
 }
 
+/* 🪙 WALLET API */
 export const walletAPI = {
   getBalance: async (userId: string) => {
     return fetchAPI(`wallet-balance/${userId}`);
   },
 };
 
+/* 🏦 ESCROW API */
 export const escrowAPI = {
   deposit: async (bookingId: string, farmerId: string, amount: number) => {
     return fetchAPI('escrow-deposit', {
@@ -49,6 +53,7 @@ export const escrowAPI = {
   },
 };
 
+/* ⚖️ DISPUTE API */
 export const disputeAPI = {
   getAll: async (adminId: string) => {
     return fetchAPI('disputes-list', {
@@ -72,6 +77,7 @@ export const disputeAPI = {
   },
 };
 
+/* 💬 MESSAGES API */
 export const messagesAPI = {
   send: async (data: {
     booking_id?: string;
@@ -92,6 +98,7 @@ export const messagesAPI = {
   },
 };
 
+/* 📅 BOOKINGS API */
 export const bookingAPI = {
   updateStatus: async (bookingId: string, userId: string, status: string) => {
     return fetchAPI('booking-update-status', {
@@ -117,6 +124,7 @@ export const bookingAPI = {
   },
 };
 
+/* 🗺️ MAP / GEOLOCATION API — UPDATED */
 export const mapAPI = {
   getNearbyServices: async ({
     lat,
@@ -124,31 +132,30 @@ export const mapAPI = {
     radius,
     category,
     minRating,
+    farmerId, // ✅ Optional farmerId for fallback lookup
   }: {
     lat: number;
     lng: number;
     radius: number;
     category?: string;
     minRating?: number;
+    farmerId?: string;
   }) => {
     const params = new URLSearchParams({
-      lat: lat.toString(),
-      lng: lng.toString(),
-      radius: radius.toString(),
+      lat: String(lat),
+      lng: String(lng),
+      radius: String(radius || 50),
     });
 
-    if (category) {
-      params.append('category', category);
-    }
-
-    if (typeof minRating === 'number') {
-      params.append('min_rating', minRating.toString());
-    }
+    if (category) params.append('category', category);
+    if (typeof minRating === 'number') params.append('min_rating', minRating.toString());
+    if (farmerId) params.append('farmer_id', farmerId); // ✅ optional param for backend fallback
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
   },
 };
 
+/* 🧑‍💼 ADMIN API */
 export const adminAPI = {
   getDashboardStats: async (adminId: string) => {
     return fetchAPI(`admin-dashboard-stats?admin_id=${adminId}`);
