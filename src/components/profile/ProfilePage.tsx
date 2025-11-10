@@ -82,6 +82,16 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onBack, onProfil
   };
 
   const displayUser = profile || user;
+  if (displayUser.role === 'provider' && !displayUser.profile_completed) {
+  return (
+    <ProviderProfileForm
+      user={displayUser}
+      isFirstTime={true}
+      onSave={handleSave}
+    />
+  );
+}
+
 
   if (isEditing && displayUser) {
     return (
