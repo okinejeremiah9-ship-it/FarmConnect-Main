@@ -7,10 +7,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// DEV MODE: Allow Admin signups without token (disable later)
+// DEV MODE: Allow Admin signups without token
 const DEV_MODE_ALLOW_ADMIN_SIGNUP = true;
 
-// --- Utilities --------------------------------------------------
+// --- Helper utilities ---
 function normalizePhoneNumber(phone: string): string {
   const digitsOnly = phone.replace(/\D/g, "");
   if (digitsOnly.startsWith("0")) return "+233" + digitsOnly.substring(1);
@@ -29,7 +29,6 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isNaN(n) ? null : n;
 }
@@ -45,7 +44,7 @@ function toStringArray(value: unknown): string[] {
   return [];
 }
 
-// --- Handler ----------------------------------------------------
+// --- Main Handler ---
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -71,50 +70,30 @@ Deno.serve(async (req: Request) => {
       ...roleSpecificFields
     } = body;
 
-    if (!phone || !password || !role) {
-      throw new Error("Missing required fields: phone, password, and role are required");
-    }
+    if (!phone || !password || !role) throw new Error("Missing required fields: phone, password, and role");
 
-    if (!["farmer", "provider", "admin"].includes(role)) {
-      throw new Error("Invalid role. Must be farmer, provider, or admin");
-    }
+    if (!["farmer", "provider", "admin"].includes(role)) throw new Error("Invalid role");
 
-    // 🧩 Admin invite validation
-    if (role === "admin") {
-      if (!DEV_MODE_ALLOW_ADMIN_SIGNUP && !admin_invite_token) {
-        throw new Error("Admin registration requires a valid invite token");
-      }
-
-      if (admin_invite_token) {
-        const { data: invite, error: inviteError } = await supabaseAdmin
-          .from("admin_invites")
-          .select("*")
-          .eq("invite_token", admin_invite_token)
-          .eq("is_used", false)
-          .gt("expires_at", new Date().toISOString())
-          .maybeSingle();
-
-        if (inviteError || !invite) throw new Error("Invalid or expired admin invite token");
-      }
+    // Admin validation
+    if (role === "admin" && !DEV_MODE_ALLOW_ADMIN_SIGNUP && !admin_invite_token) {
+      throw new Error("Admin registration requires invite token");
     }
 
     const normalizedPhone = normalizePhoneNumber(phone);
     if (!normalizedPhone.match(/^\+233\d{9}$/)) {
-      throw new Error("Invalid Ghana phone number format (expected +233XXXXXXXXX or 0XXXXXXXXX)");
+      throw new Error("Invalid Ghana phone number format (+233XXXXXXXXX)");
     }
 
-    // 🧩 Ensure not already registered
+    // Check if phone exists
     const { data: existingUser } = await supabaseAdmin
       .from("users")
       .select("id, phone")
       .eq("phone", normalizedPhone)
       .maybeSingle();
 
-    if (existingUser) {
-      throw new Error("Phone number already registered. Please log in instead.");
-    }
+    if (existingUser) throw new Error("Phone number already registered. Please log in instead.");
 
-    // 🧩 Create Auth user
+    // Create auth user
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       phone: normalizedPhone,
       email: email || undefined,
@@ -122,12 +101,13 @@ Deno.serve(async (req: Request) => {
       phone_confirm: true,
       email_confirm: true,
     });
-    if (authError) throw new Error("Failed to create Auth user: " + authError.message);
+
+    if (authError) throw new Error("Auth creation failed: " + authError.message);
 
     const userId = authData.user?.id;
-    if (!userId) throw new Error("Failed to retrieve new Auth user ID");
+    if (!userId) throw new Error("Failed to retrieve auth user ID");
 
-    // 🧩 Build database record
+    // Build user record
     const insertData: Record<string, any> = {
       id: userId,
       name: name || "User",
@@ -142,59 +122,54 @@ Deno.serve(async (req: Request) => {
       latitude: toNumberOrNull(latitude),
       longitude: toNumberOrNull(longitude),
       profile_completed: false,
+      created_at: new Date().toISOString(),
     };
 
-    // 🧩 Role-specific fields
+    // Role-specific fields
     if (role === "farmer") {
       insertData.farm_size = roleSpecificFields.farm_size || null;
       insertData.crop_types = toStringArray(roleSpecificFields.crop_types);
       insertData.num_workers = toIntOrNull(roleSpecificFields.num_workers);
-      if (!insertData.farm_size || insertData.crop_types.length === 0) {
-        throw new Error("Farmer registration requires farm size and crop types");
-      }
     }
 
- if (role === "provider") {
-  insertData.business_name = roleSpecificFields.business_name || null;
-  insertData.contact_person = roleSpecificFields.contact_person || name || null;
-  insertData.service_categories = []; // default empty
-  insertData.service_description = null;
-  insertData.pricing_info = null;
-  insertData.years_experience = null;
-  insertData.profile_completed = false; // explicitly mark as incomplete
-}
+    if (role === "provider") {
+      insertData.business_name = roleSpecificFields.business_name || null;
+      insertData.contact_person = roleSpecificFields.contact_person || name || null;
+      insertData.service_categories = toStringArray(roleSpecificFields.service_categories);
+      insertData.service_description = roleSpecificFields.service_description || null;
+      insertData.pricing_info = roleSpecificFields.pricing_info ?? null;
+      insertData.years_experience = toIntOrNull(roleSpecificFields.years_experience);
+    }
 
-
-    // 🧩 Insert into users table
+    // Insert into users table
     const { data: user, error: userError } = await supabaseAdmin
       .from("users")
       .insert(insertData)
       .select("id, name, phone, role, created_at")
       .single();
 
-    if (userError) throw new Error("Failed to insert user record: " + userError.message);
-
-    // 🧩 Mark admin invite used
-    if (role === "admin" && admin_invite_token) {
-      await supabaseAdmin
-        .from("admin_invites")
-        .update({ is_used: true, used_by: user.id })
-        .eq("invite_token", admin_invite_token);
+    if (userError) {
+      console.error("❌ DB Insert Error:", userError);
+      throw new Error("Database insert failed: " + userError.message);
     }
+
+    if (!user) throw new Error("No user returned after insert");
+
+    console.log("✅ User inserted successfully:", user);
 
     return new Response(
       JSON.stringify({
         success: true,
         message: "Account created successfully",
-        user: { ...user, is_verified: true },
+        user,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {
     console.error("Signup error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
-    });
+    return new Response(
+      JSON.stringify({ success: false, error: error.message }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+    );
   }
 });
