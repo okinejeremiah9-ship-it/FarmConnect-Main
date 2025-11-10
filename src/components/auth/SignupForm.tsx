@@ -74,6 +74,16 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             role: formData.role,
             admin_invite_token: adminInviteToken,
           }),
+          // inside handleSubmit -> JSON.stringify(...)
+body: JSON.stringify({
+  name: formData.name,
+  phone: normalizedPhone,
+  password: formData.password,
+  role: formData.role,
+  // Providers will complete their profile (e.g. service categories) after signup
+  admin_invite_token: adminInviteToken,
+}),
+
         }
       );
 
