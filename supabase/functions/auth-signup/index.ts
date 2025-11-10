@@ -154,17 +154,16 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    if (role === "provider") {
-      insertData.business_name = roleSpecificFields.business_name || null;
-      insertData.contact_person = roleSpecificFields.contact_person || name || null;
-      insertData.service_categories = toStringArray(roleSpecificFields.service_categories);
-      insertData.service_description = roleSpecificFields.service_description || null;
-      insertData.pricing_info = roleSpecificFields.pricing_info ?? null;
-      insertData.years_experience = toIntOrNull(roleSpecificFields.years_experience);
-      if (!insertData.business_name || !insertData.service_description) {
-        throw new Error("Provider registration requires business name and service description");
-      }
-    }
+ if (role === "provider") {
+  insertData.business_name = roleSpecificFields.business_name || null;
+  insertData.contact_person = roleSpecificFields.contact_person || name || null;
+  insertData.service_categories = []; // default empty
+  insertData.service_description = null;
+  insertData.pricing_info = null;
+  insertData.years_experience = null;
+  insertData.profile_completed = false; // explicitly mark as incomplete
+}
+
 
     // 🧩 Insert into users table
     const { data: user, error: userError } = await supabaseAdmin
