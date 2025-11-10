@@ -29,12 +29,16 @@ interface ProviderProfileFormProps {
   user: any;
   onCancel?: () => void;
   isFirstTime?: boolean;
+    onSave?: (data: any) => Promise<void> | void;
+  saving?: boolean;
 }
 
 export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
   user,
   onCancel,
   isFirstTime = false,
+    onSave,
+  saving = false,
 }) => {
   const { updateProfile, refreshUser } = useUserSession();
 
@@ -143,10 +147,14 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
         profile_completed: true,
       };
 
-      await updateProfile(updateData);
-      await refreshUser(user.id);
+if (onSave) {
+  await onSave(updateData); // delegate save to parent if provided
+} else {
+  await updateProfile(updateData);
+  await refreshUser(user.id);
+}
+alert("✅ Provider profile saved successfully and synced!");
 
-      alert("✅ Provider profile saved successfully and synced!");
     } catch (err) {
       console.error("Profile save error:", err);
       alert("❌ Failed to save profile. Please try again.");
