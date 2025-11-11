@@ -49,20 +49,32 @@ export const UserSessionProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const clearUser = useCallback(() => persistUser(null), [persistUser]);
 
+  /**
+   * ✅ Use the deployed Edge Function for refreshing user data.
+   */
   const refreshUser = useCallback(
     async (userId: string, fallback: any | null = null) => {
       if (!userId) return fallback ?? null;
 
       try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', userId)
-          .single();
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
 
-        if (error) throw error;
+        const data = await response.json();
 
-        const profile = { ...(fallback ?? {}), ...data };
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to fetch user profile');
+        }
+
+        const profile = { ...(fallback ?? {}), ...data.user };
         persistUser(profile);
         return profile;
       } catch (error) {
@@ -74,6 +86,9 @@ export const UserSessionProvider: React.FC<{ children: React.ReactNode }> = ({ c
     [persistUser]
   );
 
+  /**
+   * ✅ Update user profile directly in Supabase `users` table.
+   */
   const updateProfile = useCallback(
     async (updates: Record<string, any>) => {
       if (!user?.id) {
@@ -136,3 +151,4 @@ export const useUserSession = () => {
     throw new Error('useUserSession must be used within a UserSessionProvider');
   return context;
 };
+
