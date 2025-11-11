@@ -30,12 +30,17 @@ export const UserProfile: React.FC<UserProfileProps> = ({
 
   const fetchUserProfile = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${profileUserId}`, {
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      });
+const response = await fetch(
+  `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
+  {
+    method: "GET",
+    headers: {
+      "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+    },
+  }
+);
+
 
       const data = await response.json();
 
