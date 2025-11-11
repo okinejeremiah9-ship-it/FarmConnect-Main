@@ -23,17 +23,14 @@ function normalizeArrayField(value: unknown): string[] {
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
+    // ✅ Correct environment variables and syntax
     const supabaseClient = createClient(
-Deno.env.get("PROJECT_URL")
-Deno.env.get("SERVICE_ROLE_KEY")
-
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       {
         auth: {
           autoRefreshToken: false,
@@ -43,21 +40,20 @@ Deno.env.get("SERVICE_ROLE_KEY")
     );
 
     const url = new URL(req.url);
-    const userId = url.searchParams.get('id');
+    const userId = url.searchParams.get("id");
 
     if (!userId) {
-      throw new Error('User ID is required');
+      throw new Error("User ID is required");
     }
 
     const { data: user, error: userError } = await supabaseClient
-      .from('users')
+      .from("users")
       .select(`
         id,
         name,
         phone,
         email,
         role,
-        email,
         bio,
         profile_pic,
         farm_size,
@@ -82,25 +78,25 @@ Deno.env.get("SERVICE_ROLE_KEY")
         created_at,
         updated_at
       `)
-      .eq('id', userId)
+      .eq("id", userId)
       .maybeSingle();
 
     if (userError || !user) {
-      throw new Error('User not found');
+      throw new Error("User not found");
     }
 
     let services = [];
-    if (user.role === 'provider') {
+    if (user.role === "provider") {
       const { data: servicesData } = await supabaseClient
-        .from('services')
-        .select('*')
-        .eq('provider_id', userId);
+        .from("services")
+        .select("*")
+        .eq("provider_id", userId);
 
       services = servicesData || [];
     }
 
     const { data: reviews } = await supabaseClient
-      .from('reviews')
+      .from("reviews")
       .select(`
         id,
         rating,
@@ -109,8 +105,8 @@ Deno.env.get("SERVICE_ROLE_KEY")
         reviewer:reviewer_id(id, name, full_name),
         booking:booking_id(id)
       `)
-      .eq('reviewee_id', userId)
-      .order('created_at', { ascending: false })
+      .eq("reviewee_id", userId)
+      .order("created_at", { ascending: false })
       .limit(10);
 
     const normalizedUser = {
@@ -128,18 +124,14 @@ Deno.env.get("SERVICE_ROLE_KEY")
         services: services || [],
         reviews: reviews || [],
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {
+    console.error("❌ get-user-profile error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
     );
   }
 });
+
