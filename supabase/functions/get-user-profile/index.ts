@@ -21,6 +21,13 @@ function normalizeArrayField(value: unknown): string[] {
   return [];
 }
 
+export const config = {
+  runtime: "edge",
+  security: {
+    enabled: false, // 🔓 Makes the function public
+  },
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
