@@ -66,14 +66,23 @@ Deno.serve(async (req: Request) => {
 
     // ✅ Fetch provider data
     const { data: providers, error } = await supabase
-      .from("users")
-      .select(`
-        id, name, business_name, contact_person, phone, email,
-        service_categories, service_description, pricing_info,
-        years_experience, latitude, longitude, rating, total_reviews,
-        profile_completed, role
-      `)
-      .eq("role", "provider")
+const { data: providers, error } = await supabaseClient
+  .from("users")
+  .select(`
+    id,
+    name,
+    business_name,
+    contact_person,
+    phone,
+    latitude,
+    longitude,
+    service_categories,
+    service_description,
+    pricing_info,
+    years_experience
+  `)
+  .eq("role", "provider");
+
       .not("latitude", "is", null)
       .not("longitude", "is", null);
 
