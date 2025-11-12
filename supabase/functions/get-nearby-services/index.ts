@@ -8,17 +8,18 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Haversine formula to calculate distance in KM
+// Haversine formula
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
+
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
@@ -29,6 +30,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+
+    // Correct client
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -36,58 +39,59 @@ Deno.serve(async (req: Request) => {
     );
 
     const url = new URL(req.url);
-    const farmerId = url.searchParams.get("farmer_id"); // optional
+    const farmerId = url.searchParams.get("farmer_id");
     let lat = parseFloat(url.searchParams.get("lat") || "0");
     let lng = parseFloat(url.searchParams.get("lng") || "0");
     const radius = parseFloat(url.searchParams.get("radius") || "50");
     const category = url.searchParams.get("category");
     const minRating = parseFloat(url.searchParams.get("min_rating") || "0");
 
-    // 🧭 If no lat/lng provided, try fetching farmer's saved location
+    // If lat/lng not provided → get farmer location
     if ((!lat || !lng) && farmerId) {
-      const { data: farmer, error: farmerError } = await supabase
+      const { data: farmer } = await supabase
         .from("users")
         .select("latitude, longitude")
         .eq("id", farmerId)
         .maybeSingle();
 
-      if (farmerError) throw new Error("Failed to fetch farmer location: " + farmerError.message);
-      if (farmer && farmer.latitude && farmer.longitude) {
+      if (farmer?.latitude && farmer?.longitude) {
         lat = Number(farmer.latitude);
         lng = Number(farmer.longitude);
       } else {
-        throw new Error("Farmer location not available and no live GPS provided");
+        throw new Error("Farmer location not available");
       }
     }
 
     if (isNaN(lat) || isNaN(lng)) {
-      throw new Error("Latitude and longitude must be valid numbers");
+      throw new Error("Invalid coordinates");
     }
 
-    // ✅ Fetch provider data
+    // ✅ CORRECT PROVIDER QUERY
     const { data: providers, error } = await supabase
-const { data: providers, error } = await supabaseClient
-  .from("users")
-  .select(`
-    id,
-    name,
-    business_name,
-    contact_person,
-    phone,
-    latitude,
-    longitude,
-    service_categories,
-    service_description,
-    pricing_info,
-    years_experience
-  `)
-  .eq("role", "provider");
-
+      .from("users")
+      .select(`
+        id,
+        name,
+        business_name,
+        contact_person,
+        phone,
+        latitude,
+        longitude,
+        service_categories,
+        service_description,
+        pricing_info,
+        years_experience,
+        rating
+      `)
+      .eq("role", "provider")
       .not("latitude", "is", null)
       .not("longitude", "is", null);
 
-    if (error) throw new Error(`Failed to fetch providers: ${error.message}`);
+    if (error) {
+      throw new Error(`Failed to fetch providers: ${error.message}`);
+    }
 
+    // Filter providers by distance & category
     const nearby = (providers || [])
       .map((p: any) => {
         const distance = calculateDistance(lat, lng, Number(p.latitude), Number(p.longitude));
@@ -95,18 +99,16 @@ const { data: providers, error } = await supabaseClient
         const categories = Array.isArray(p.service_categories)
           ? p.service_categories
           : typeof p.service_categories === "string"
-          ? p.service_categories.split(",").map((c: string) => c.trim())
+          ? p.service_categories.split(",").map((x: string) => x.trim())
           : [];
 
         return { ...p, distance_km: Math.round(distance * 10) / 10, categories };
       })
       .filter((p) => {
         if (p.distance_km > radius) return false;
-        if (category && category.trim() && category !== "all") {
-          const match = p.categories.some(
-            (c: string) => c.toLowerCase() === category.trim().toLowerCase()
-          );
-          if (!match) return false;
+        if (category && category !== "all") {
+          if (!p.categories.some((c: string) => c.toLowerCase() === category.toLowerCase()))
+            return false;
         }
         if (minRating > 0 && (Number(p.rating) || 0) < minRating) return false;
         return true;
@@ -122,10 +124,10 @@ const { data: providers, error } = await supabaseClient
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+
   } catch (err: any) {
-    console.error("get-nearby-services error:", err);
     return new Response(
-      JSON.stringify({ success: false, error: err instanceof Error ? err.message : String(err) }),
+      JSON.stringify({ success: false, error: err.message }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
