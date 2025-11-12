@@ -1,7 +1,7 @@
 export const config = {
   runtime: "edge",
-  regions: ["eu-west-1"], 
-  security: { enabled: false }, // 🔓 Makes function PUBLIC
+  regions: ["eu-west-1"],
+  security: { enabled: false },
 };
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -10,29 +10,19 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-function normalizeArrayField(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map(item => (typeof item === 'string' ? item.trim() : String(item)))
-      .filter(item => item.length > 0);
-  }
-
-  if (typeof value === 'string' && value.length > 0) {
-    return value.split(',').map(item => item.trim()).filter(item => item.length > 0);
-  }
-
-  return [];
+// Normalize array-type DB fields
+function normalizeArrayField(value: any): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String).map((v) => v.trim());
+  return String(value)
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
-
-export const config = {
-  runtime: "edge",
-  security: {
-    enabled: false, // 🔓 Makes the function public
-  },
-};
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -40,111 +30,47 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // ✅ Correct environment variables and syntax
+    // 🔥 FIXED — correct env vars + correct syntax
     const supabaseClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
+        auth: { autoRefreshToken: false, persistSession: false },
+      },
     );
 
     const url = new URL(req.url);
     const userId = url.searchParams.get("id");
 
-    if (!userId) {
-      throw new Error("User ID is required");
-    }
+    if (!userId) throw new Error("User ID is required");
 
     const { data: user, error: userError } = await supabaseClient
       .from("users")
-      .select(`
-        id,
-        name,
-        phone,
-        email,
-        role,
-        bio,
-        profile_pic,
-        farm_size,
-        crop_types,
-        num_workers,
-        services_offered,
-        business_name,
-        contact_person,
-        service_categories,
-        service_description,
-        service_availability,
-        pricing_info,
-        equipment_list,
-        years_experience,
-        latitude,
-        longitude,
-        address,
-        rating,
-        total_reviews,
-        is_verified,
-        profile_completed,
-        created_at,
-        updated_at
-      `)
+      .select("*")
       .eq("id", userId)
       .maybeSingle();
 
-    if (userError || !user) {
-      throw new Error("User not found");
-    }
+    if (userError || !user) throw new Error("User not found");
 
-    let services = [];
-    if (user.role === "provider") {
-      const { data: servicesData } = await supabaseClient
-        .from("services")
-        .select("*")
-        .eq("provider_id", userId);
-
-      services = servicesData || [];
-    }
-
-    const { data: reviews } = await supabaseClient
-      .from("reviews")
-      .select(`
-        id,
-        rating,
-        comment,
-        created_at,
-        reviewer:reviewer_id(id, name, full_name),
-        booking:booking_id(id)
-      `)
-      .eq("reviewee_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(10);
-
+    // Normalize fields
     const normalizedUser = {
       ...user,
       crop_types: normalizeArrayField(user.crop_types),
-      services_offered: normalizeArrayField(user.services_offered),
       service_categories: normalizeArrayField(user.service_categories),
       equipment_list: normalizeArrayField(user.equipment_list),
+      services_offered: normalizeArrayField(user.services_offered),
     };
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        user: normalizedUser,
-        services: services || [],
-        reviews: reviews || [],
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
-    );
-  } catch (error) {
-    console.error("❌ get-user-profile error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
-    );
+    return new Response(JSON.stringify({ success: true, user: normalizedUser }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 200,
+    });
+  } catch (err: any) {
+    console.error("❌ Edge function error:", err);
+    return new Response(JSON.stringify({ error: err.message }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 400,
+    });
   }
 });
 
