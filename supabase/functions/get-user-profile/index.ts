@@ -1,3 +1,9 @@
+export const config = {
+  runtime: "edge",
+  regions: ["eu-west-1"], 
+  security: { enabled: false }, // 🔓 Makes function PUBLIC
+};
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
