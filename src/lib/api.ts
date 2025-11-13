@@ -8,8 +8,8 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
     ...options,
     headers: {
       Authorization: `Bearer ${API_KEY}`,
-      apikey: API_KEY, // ✅ important for some Supabase setups
-      'Content-Type': 'application/json',
+      apikey: API_KEY, // ✅ important for Supabase Edge
+      "Content-Type": "application/json",
       ...(options.headers || {}),
     },
   });
@@ -33,15 +33,15 @@ export const walletAPI = {
 /* 🏦 ESCROW API */
 export const escrowAPI = {
   deposit: async (bookingId: string, farmerId: string, amount: number) => {
-    return fetchAPI('escrow-deposit', {
-      method: 'POST',
+    return fetchAPI("escrow-deposit", {
+      method: "POST",
       body: JSON.stringify({ booking_id: bookingId, farmer_id: farmerId, amount }),
     });
   },
 
   release: async (escrowId: string, farmerId: string) => {
-    return fetchAPI('escrow-release', {
-      method: 'POST',
+    return fetchAPI("escrow-release", {
+      method: "POST",
       body: JSON.stringify({ escrow_id: escrowId, farmer_id: farmerId }),
     });
   },
@@ -53,8 +53,8 @@ export const escrowAPI = {
     details: string,
     audioUrl?: string | null
   ) => {
-    return fetchAPI('escrow-dispute', {
-      method: 'POST',
+    return fetchAPI("escrow-dispute", {
+      method: "POST",
       body: JSON.stringify({
         escrow_id: escrowId,
         user_id: userId,
@@ -69,15 +69,15 @@ export const escrowAPI = {
 /* ⚖️ DISPUTE API */
 export const disputeAPI = {
   getAll: async (adminId: string) => {
-    return fetchAPI('disputes-list', {
-      method: 'POST',
+    return fetchAPI("disputes-list", {
+      method: "POST",
       body: JSON.stringify({ admin_id: adminId }),
     });
   },
 
   listForUser: async (userId: string) => {
-    return fetchAPI('disputes-list', {
-      method: 'POST',
+    return fetchAPI("disputes-list", {
+      method: "POST",
       body: JSON.stringify({ user_id: userId }),
     });
   },
@@ -88,9 +88,14 @@ export const disputeAPI = {
     resolution: string,
     action: string
   ) => {
-    return fetchAPI('dispute-resolve', {
-      method: 'POST',
-      body: JSON.stringify({ dispute_id: disputeId, admin_id: adminId, resolution, action }),
+    return fetchAPI("dispute-resolve", {
+      method: "POST",
+      body: JSON.stringify({
+        dispute_id: disputeId,
+        admin_id: adminId,
+        resolution,
+        action,
+      }),
     });
   },
 };
@@ -101,12 +106,12 @@ export const messagesAPI = {
     booking_id?: string;
     sender_id: string;
     receiver_id: string;
-    message_type: 'text' | 'audio' | 'image';
+    message_type: "text" | "audio" | "image";
     content?: string;
     media_url?: string;
   }) => {
-    return fetchAPI('messages-send', {
-      method: 'POST',
+    return fetchAPI("messages-send", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -119,8 +124,8 @@ export const messagesAPI = {
 /* 📅 BOOKINGS API */
 export const bookingAPI = {
   updateStatus: async (bookingId: string, userId: string, status: string) => {
-    return fetchAPI('booking-update-status', {
-      method: 'POST',
+    return fetchAPI("booking-update-status", {
+      method: "POST",
       body: JSON.stringify({ booking_id: bookingId, user_id: userId, status }),
     });
   },
@@ -135,8 +140,8 @@ export const bookingAPI = {
     service_location: string;
     notes?: string;
   }) => {
-    return fetchAPI('create-booking', {
-      method: 'POST',
+    return fetchAPI("create-booking", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -165,9 +170,10 @@ export const mapAPI = {
       radius: String(radius || 50),
     });
 
-    if (category) params.append('category', category);
-    if (typeof minRating === 'number') params.append('min_rating', minRating.toString());
-    if (farmerId) params.append('farmer_id', farmerId);
+    if (category) params.append("category", category);
+    if (typeof minRating === "number")
+      params.append("min_rating", minRating.toString());
+    if (farmerId) params.append("farmer_id", farmerId);
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
   },
