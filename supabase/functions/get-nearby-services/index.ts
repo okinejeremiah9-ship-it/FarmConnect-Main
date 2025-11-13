@@ -8,10 +8,10 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Haversine distance calculation
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+// Distance calculator
+function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toRad = (deg) => (deg * Math.PI) / 180;
 
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -25,7 +25,23 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-Deno.serve(async (req: Request) => {
+// Normalize service_categories (handles text[], string, null)
+function normalizeCategories(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string")
+    return raw.split(",").map((x) => x.trim()).filter(Boolean);
+  return [];
+}
+
+// Normalize rating (string or number)
+function normalizeRating(r) {
+  if (r == null) return 0;
+  if (typeof r === "number") return r;
+  const parsed = parseFloat(r);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
@@ -45,7 +61,7 @@ Deno.serve(async (req: Request) => {
     const category = url.searchParams.get("category");
     const minRating = parseFloat(url.searchParams.get("min_rating") || "0");
 
-    // Fetch provider data — CLEAN SELECT (NO full_name)
+    // Fetch providers
     const { data: providers, error } = await supabase
       .from("users")
       .select(`
@@ -68,32 +84,30 @@ Deno.serve(async (req: Request) => {
       .not("latitude", "is", null)
       .not("longitude", "is", null);
 
-    if (error) throw new Error(`Failed to fetch providers: ${error.message}`);
+    if (error) throw new Error(error.message);
 
-    const results = (providers || [])
-      .map((p: any) => {
-        const d = calculateDistance(lat, lng, Number(p.latitude), Number(p.longitude));
+    const results = providers
+      .map((p) => {
+        const dist = calculateDistance(lat, lng, Number(p.latitude), Number(p.longitude));
 
         return {
           ...p,
-          distance_km: Math.round(d * 10) / 10,
-          categories:
-            typeof p.service_categories === "string"
-              ? p.service_categories.split(",").map((s: string) => s.trim())
-              : Array.isArray(p.service_categories)
-              ? p.service_categories
-              : [],
+          distance_km: Math.round(dist * 10) / 10,
+          categories: normalizeCategories(p.service_categories),
+          rating_value: normalizeRating(p.rating),
         };
       })
       .filter((p) => {
         if (p.distance_km > radius) return false;
 
         if (category && category !== "all") {
-          if (!p.categories.some((c: string) => c.toLowerCase() === category.toLowerCase()))
-            return false;
+          const match = p.categories.some(
+            (c) => c.toLowerCase() === category.toLowerCase()
+          );
+          if (!match) return false;
         }
 
-        if (minRating > 0 && (p.rating || 0) < minRating) return false;
+        if (minRating > 0 && p.rating_value < minRating) return false;
 
         return true;
       })
@@ -108,12 +122,11 @@ Deno.serve(async (req: Request) => {
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err: any) {
-    console.error("get-nearby-services error:", err);
+  } catch (err) {
     return new Response(
       JSON.stringify({
         success: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: err.message || String(err),
       }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
