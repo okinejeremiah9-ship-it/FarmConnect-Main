@@ -7,9 +7,10 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   const response = await fetch(`${API_BASE}/${endpoint}`, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${API_KEY}`,
+      Authorization: `Bearer ${API_KEY}`,
+      apikey: API_KEY, // ✅ important for some Supabase setups
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers || {}),
     },
   });
 
@@ -45,10 +46,22 @@ export const escrowAPI = {
     });
   },
 
-  dispute: async (escrowId: string, userId: string, reason: string, details: string, audioUrl?: string | null) => {
+  dispute: async (
+    escrowId: string,
+    userId: string,
+    reason: string,
+    details: string,
+    audioUrl?: string | null
+  ) => {
     return fetchAPI('escrow-dispute', {
       method: 'POST',
-      body: JSON.stringify({ escrow_id: escrowId, user_id: userId, reason, details, audio_url: audioUrl }),
+      body: JSON.stringify({
+        escrow_id: escrowId,
+        user_id: userId,
+        reason,
+        details,
+        audio_url: audioUrl,
+      }),
     });
   },
 };
@@ -69,7 +82,12 @@ export const disputeAPI = {
     });
   },
 
-  resolve: async (disputeId: string, adminId: string, resolution: string, action: string) => {
+  resolve: async (
+    disputeId: string,
+    adminId: string,
+    resolution: string,
+    action: string
+  ) => {
     return fetchAPI('dispute-resolve', {
       method: 'POST',
       body: JSON.stringify({ dispute_id: disputeId, admin_id: adminId, resolution, action }),
@@ -124,7 +142,7 @@ export const bookingAPI = {
   },
 };
 
-/* 🗺️ MAP / GEOLOCATION API — UPDATED */
+/* 🗺️ MAP / GEOLOCATION API */
 export const mapAPI = {
   getNearbyServices: async ({
     lat,
@@ -132,7 +150,7 @@ export const mapAPI = {
     radius,
     category,
     minRating,
-    farmerId, // ✅ Optional farmerId for fallback lookup
+    farmerId,
   }: {
     lat: number;
     lng: number;
@@ -149,7 +167,7 @@ export const mapAPI = {
 
     if (category) params.append('category', category);
     if (typeof minRating === 'number') params.append('min_rating', minRating.toString());
-    if (farmerId) params.append('farmer_id', farmerId); // ✅ optional param for backend fallback
+    if (farmerId) params.append('farmer_id', farmerId);
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
   },
@@ -161,3 +179,4 @@ export const adminAPI = {
     return fetchAPI(`admin-dashboard-stats?admin_id=${adminId}`);
   },
 };
+
