@@ -14,14 +14,14 @@ const corsHeaders = {
 function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, "");
 
-  if (digits.startsWith("0")) return "+233" + digits.slice(1);   // 0XXXXXXXXX
-  if (digits.startsWith("233")) return "+" + digits;             // 233XXXXXXXXX
-  if (phone.startsWith("+233")) return phone;                    // +233XXXXXXXXX
+  if (digits.startsWith("0")) return "+233" + digits.slice(1);
+  if (digits.startsWith("233")) return "+" + digits;
+  if (phone.startsWith("+233")) return phone;
 
-  return "+233" + digits;                                        // fallback
+  return "+233" + digits;
 }
 
-// Simple SHA256 hash
+// SHA256 hashing
 async function hashPassword(password: string) {
   const salt = "farmconnect_salt_2025";
   const enc = new TextEncoder().encode(password + salt);
@@ -32,10 +32,11 @@ async function hashPassword(password: string) {
     .join("");
 }
 
-// Normalize DB array-like fields
+// Normalize DB arrays
 function normalizeArray(v: any): string[] {
   if (!v) return [];
   if (Array.isArray(v)) return v.map(String).map((x) => x.trim()).filter(Boolean);
+
   if (typeof v === "string") {
     return v
       .replace(/[{}"]/g, "")
@@ -43,6 +44,7 @@ function normalizeArray(v: any): string[] {
       .map((x) => x.trim())
       .filter(Boolean);
   }
+
   return [];
 }
 
@@ -71,7 +73,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Fetch user from DB
+    // Fetch user
     const { data: user, error } = await supabase
       .from("users")
       .select("*")
@@ -80,9 +82,13 @@ Deno.serve(async (req) => {
 
     if (error || !user) throw new Error("Invalid phone number");
 
-    if (!user.is_verified) {
-      throw new Error("Account not verified");
-    }
+    // IMPORTANT: remove the old OTP+verification block
+    // ❌ OLD:
+    // if (!user.is_verified) throw new Error("Account not verified");
+    //
+    // ✔️ NEW:
+    // Auto-verification means we ALWAYS allow login.
+    // (Optionally enforce a rule here if you want later.)
 
     // Validate password
     if (!fetch_user_only) {
@@ -90,10 +96,10 @@ Deno.serve(async (req) => {
       if (hashed !== user.password_hash) throw new Error("Incorrect password");
     }
 
-    const { password_hash, ...cleanUser } = user;
+    const { password_hash, ...clean } = user;
 
     const normalizedUser = {
-      ...cleanUser,
+      ...clean,
       crop_types: normalizeArray(user.crop_types),
       service_categories: normalizeArray(user.service_categories),
       equipment_list: normalizeArray(user.equipment_list),
@@ -106,12 +112,18 @@ Deno.serve(async (req) => {
         message: "Login successful",
         user: normalizedUser,
       }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   } catch (err: any) {
     return new Response(
       JSON.stringify({ success: false, error: err.message }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   }
 });
