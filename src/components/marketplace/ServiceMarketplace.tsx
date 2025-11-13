@@ -151,7 +151,11 @@ export const ServiceMarketplace: React.FC = () => {
     return {
       id: provider.id,
       providerId: provider.id,
-      providerName: provider.business_name || provider.full_name || provider.name || 'Service Provider',
+      providerName: provider.business_name ||
+provider.name ||
+provider.contact_person ||
+'Service Provider'
+,
       providerRating: typeof provider.rating === 'number'
         ? provider.rating
         : provider.rating
