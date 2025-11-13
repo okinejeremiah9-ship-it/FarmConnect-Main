@@ -7,71 +7,41 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
-  }
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? ""
     );
 
     const url = new URL(req.url);
-    const userId = url.searchParams.get('id');
-
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
+    const userId = url.searchParams.get("id");
+    if (!userId) throw new Error("User ID required");
 
     const { data: user, error: userError } = await supabaseClient
-      .from('users')
-      .select('id, name, full_name, rating, total_reviews')
-      .eq('id', userId)
+      .from("users")
+      .select("id, name, rating, total_reviews")
+      .eq("id", userId)
       .maybeSingle();
 
-    if (userError || !user) {
-      throw new Error('User not found');
-    }
+    if (userError || !user) throw new Error("User not found");
 
     const { data: reviews, error: reviewsError } = await supabaseClient
-      .from('reviews')
+      .from("reviews")
       .select(`
         id,
         rating,
         comment,
         created_at,
-        reviewer:reviewer_id(id, name, full_name),
+        reviewer:reviewer_id(id, name),
         booking:booking_id(id)
       `)
-      .eq('reviewee_id', userId)
-      .order('created_at', { ascending: false });
+      .eq("reviewee_id", userId)
+      .order("created_at", { ascending: false });
 
-    if (reviewsError) {
-      throw new Error('Failed to fetch reviews: ' + reviewsError.message);
-    }
-
-    const ratingDistribution = {
-      5: 0,
-      4: 0,
-      3: 0,
-      2: 0,
-      1: 0,
-    };
-
-    reviews?.forEach(review => {
-      ratingDistribution[review.rating as keyof typeof ratingDistribution]++;
-    });
+    if (reviewsError) throw new Error(reviewsError.message);
 
     return new Response(
       JSON.stringify({
@@ -79,25 +49,17 @@ Deno.serve(async (req: Request) => {
         user: {
           id: user.id,
           name: user.name,
-          full_name: user.full_name,
           averageRating: user.rating || 0,
           totalReviews: user.total_reviews || 0,
         },
-        reviews: reviews || [],
-        ratingDistribution,
+        reviews,
       }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      }
-    );
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
