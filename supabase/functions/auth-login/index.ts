@@ -10,18 +10,20 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Normalize phone numbers → +233XXXXXXXXX
+// ------------------------
+// Normalize phone → +233XXX
+// ------------------------
 function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, "");
-
   if (digits.startsWith("0")) return "+233" + digits.slice(1);
   if (digits.startsWith("233")) return "+" + digits;
   if (phone.startsWith("+233")) return phone;
-
   return "+233" + digits;
 }
 
-// SHA256 hashing
+// ------------------------
+// SHA256 password hashing
+// ------------------------
 async function hashPassword(password: string) {
   const salt = "farmconnect_salt_2025";
   const enc = new TextEncoder().encode(password + salt);
@@ -32,14 +34,20 @@ async function hashPassword(password: string) {
     .join("");
 }
 
-// Normalize DB arrays
+// ------------------------
+// Normalize PG arrays
+// Handles: text[], "{a,b}", ["a","b"], "a,b"
+// ------------------------
 function normalizeArray(v: any): string[] {
   if (!v) return [];
-  if (Array.isArray(v)) return v.map(String).map((x) => x.trim()).filter(Boolean);
+
+  if (Array.isArray(v)) {
+    return v.map(String).map((x) => x.trim()).filter(Boolean);
+  }
 
   if (typeof v === "string") {
     return v
-      .replace(/[{}"]/g, "")
+      .replace(/[{}\"]/g, "")
       .split(",")
       .map((x) => x.trim())
       .filter(Boolean);
@@ -48,6 +56,9 @@ function normalizeArray(v: any): string[] {
   return [];
 }
 
+// ------------------------
+// MAIN HANDLER
+// ------------------------
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -63,17 +74,22 @@ Deno.serve(async (req) => {
 
     const normalizedPhone = normalizePhone(phone);
 
-    if (!normalizedPhone.match(/^\+233\d{9}$/)) {
+    if (!normalizedPhone.match(/^\+233\\d{9}$/)) {
       throw new Error("Invalid phone number format");
     }
 
+    // ------------------------
+    // Supabase client (admin)
+    // ------------------------
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Fetch user
+    // ------------------------
+    // Fetch user from users table
+    // ------------------------
     const { data: user, error } = await supabase
       .from("users")
       .select("*")
@@ -82,24 +98,28 @@ Deno.serve(async (req) => {
 
     if (error || !user) throw new Error("Invalid phone number");
 
-    // IMPORTANT: remove the old OTP+verification block
-    // ❌ OLD:
-    // if (!user.is_verified) throw new Error("Account not verified");
-    //
-    // ✔️ NEW:
-    // Auto-verification means we ALWAYS allow login.
-    // (Optionally enforce a rule here if you want later.)
+    // ------------------------
+    // IMPORTANT:
+    // OPTION A — NO ACCOUNT VERIFICATION REQUIRED
+    // We skip the is_verified check completely.
+    // ------------------------
+    // (Removed the blocker)
 
-    // Validate password
+    // ------------------------
+    // Validate password ONLY if not fetching for UI
+    // ------------------------
     if (!fetch_user_only) {
       const hashed = await hashPassword(password);
-      if (hashed !== user.password_hash) throw new Error("Incorrect password");
+      if (hashed !== user.password_hash) {
+        throw new Error("Incorrect password");
+      }
     }
 
-    const { password_hash, ...clean } = user;
+    // Remove private field
+    const { password_hash, ...cleanUser } = user;
 
     const normalizedUser = {
-      ...clean,
+      ...cleanUser,
       crop_types: normalizeArray(user.crop_types),
       service_categories: normalizeArray(user.service_categories),
       equipment_list: normalizeArray(user.equipment_list),
@@ -127,3 +147,4 @@ Deno.serve(async (req) => {
     );
   }
 });
+
