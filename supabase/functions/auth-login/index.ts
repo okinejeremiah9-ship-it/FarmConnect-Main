@@ -1,35 +1,48 @@
+// supabase/functions/auth-login/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// Normalize phone numbers to +233XXXXXXXXX
+// Normalize phone numbers → +233XXXXXXXXX
 function normalizePhone(phone: string) {
   const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("0")) return "+233" + digits.slice(1);
-  if (digits.startsWith("233")) return "+" + digits;
-  if (phone.startsWith("+233")) return phone;
-  return "+233" + digits;
+
+  if (digits.startsWith("0")) return "+233" + digits.slice(1);   // 0XXXXXXXXX
+  if (digits.startsWith("233")) return "+" + digits;             // 233XXXXXXXXX
+  if (phone.startsWith("+233")) return phone;                    // +233XXXXXXXXX
+
+  return "+233" + digits;                                        // fallback
 }
 
-// SHA256 hashing for demo
+// Simple SHA256 hash
 async function hashPassword(password: string) {
   const salt = "farmconnect_salt_2025";
-  const data = new TextEncoder().encode(password + salt);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const enc = new TextEncoder().encode(password + salt);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", enc);
+
   return [...new Uint8Array(hashBuffer)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
+// Normalize DB array-like fields
 function normalizeArray(v: any): string[] {
-  if (Array.isArray(v)) return v;
-  if (typeof v === "string") return v.split(",").map((x) => x.trim()).filter(Boolean);
+  if (!v) return [];
+  if (Array.isArray(v)) return v.map(String).map((x) => x.trim()).filter(Boolean);
+  if (typeof v === "string") {
+    return v
+      .replace(/[{}"]/g, "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
   return [];
 }
 
@@ -47,6 +60,7 @@ Deno.serve(async (req) => {
     }
 
     const normalizedPhone = normalizePhone(phone);
+
     if (!normalizedPhone.match(/^\+233\d{9}$/)) {
       throw new Error("Invalid phone number format");
     }
@@ -57,7 +71,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Fetch user
+    // Fetch user from DB
     const { data: user, error } = await supabase
       .from("users")
       .select("*")
@@ -65,7 +79,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (error || !user) throw new Error("Invalid phone number");
-    if (!user.is_verified) throw new Error("Account not verified");
+
+    if (!user.is_verified) {
+      throw new Error("Account not verified");
+    }
 
     // Validate password
     if (!fetch_user_only) {
@@ -73,19 +90,21 @@ Deno.serve(async (req) => {
       if (hashed !== user.password_hash) throw new Error("Incorrect password");
     }
 
-    // Cleanup fields
-    const { password_hash, ...clean } = user;
+    const { password_hash, ...cleanUser } = user;
+
+    const normalizedUser = {
+      ...cleanUser,
+      crop_types: normalizeArray(user.crop_types),
+      service_categories: normalizeArray(user.service_categories),
+      equipment_list: normalizeArray(user.equipment_list),
+      services_offered: normalizeArray(user.services_offered),
+    };
 
     return new Response(
       JSON.stringify({
         success: true,
         message: "Login successful",
-        user: {
-          ...clean,
-          crop_types: normalizeArray(clean.crop_types),
-          service_categories: normalizeArray(clean.service_categories),
-          equipment_list: normalizeArray(clean.equipment_list),
-        },
+        user: normalizedUser,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
