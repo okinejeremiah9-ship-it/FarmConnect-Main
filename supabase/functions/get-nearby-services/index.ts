@@ -8,10 +8,14 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Distance calculator
-function calculateDistance(lat1, lon1, lat2, lon2) {
+// -------------------------------
+// Utility Functions
+// -------------------------------
+
+// Haversine distance
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371;
-  const toRad = (deg) => (deg * Math.PI) / 180;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
 
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
@@ -25,21 +29,48 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-// Normalize service_categories (handles text[], string, null)
-function normalizeCategories(raw) {
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === "string")
-    return raw.split(",").map((x) => x.trim()).filter(Boolean);
-  return [];
+// Normalize Postgres text[] OR CSV OR stringified arrays
+function normalizeCategories(raw: any): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x).trim()).filter(Boolean);
+  }
+
+  if (!raw || typeof raw !== "string") return [];
+
+  let str = raw.trim();
+
+  // Strip braces: "{A,B}"
+  if (str.startsWith("{") && str.endsWith("}")) {
+    str = str.slice(1, -1);
+  }
+
+  // Remove quotes inside: "{\"Tractor\", \"Operator\"}"
+  str = str.replace(/"/g, "");
+
+  return str
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 }
 
-// Normalize rating (string or number)
-function normalizeRating(r) {
+// Rating normalization
+function normalizeRating(r: any) {
   if (r == null) return 0;
   if (typeof r === "number") return r;
   const parsed = parseFloat(r);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
+
+// Safe coordinate parser
+const parseCoord = (value: any) => {
+  if (value === null || value === undefined) return null;
+  const parsed = parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+// -------------------------------
+// Main Handler
+// -------------------------------
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -48,21 +79,49 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
     const url = new URL(req.url);
 
-    let lat = parseFloat(url.searchParams.get("lat") || "0");
-    let lng = parseFloat(url.searchParams.get("lng") || "0");
+    const farmerId = url.searchParams.get("farmer_id");
+
+    let lat = parseCoord(url.searchParams.get("lat"));
+    let lng = parseCoord(url.searchParams.get("lng"));
+
     const radius = parseFloat(url.searchParams.get("radius") || "50");
     const category = url.searchParams.get("category");
     const minRating = parseFloat(url.searchParams.get("min_rating") || "0");
 
-    // Fetch providers
-    const { data: providers, error } = await supabase
+    // -------------------------
+    // Fallback: use farmer profile
+    // -------------------------
+    if ((lat == null || lng == null) && farmerId) {
+      const { data: farmer } = await supabase
+        .from("users")
+        .select("latitude, longitude")
+        .eq("id", farmerId)
+        .maybeSingle();
+
+      if (farmer?.latitude && farmer?.longitude) {
+        lat = parseCoord(farmer.latitude);
+        lng = parseCoord(farmer.longitude);
+      }
+    }
+
+    // -------------------------
+    // Fail if still invalid
+    // -------------------------
+    if (lat == null || lng == null) {
+      throw new Error("Latitude and longitude are required");
+    }
+
+    // -------------------------
+    // Fetch nearby providers
+    // -------------------------
+    const { data: rawProviders, error } = await supabase
       .from("users")
       .select(`
         id,
@@ -70,6 +129,7 @@ Deno.serve(async (req) => {
         business_name,
         contact_person,
         phone,
+        email,
         latitude,
         longitude,
         service_categories,
@@ -86,32 +146,42 @@ Deno.serve(async (req) => {
 
     if (error) throw new Error(error.message);
 
-    const results = providers
-      .map((p) => {
-        const dist = calculateDistance(lat, lng, Number(p.latitude), Number(p.longitude));
+    const list = (rawProviders || []).map((p: any) => {
+      const providerLat = parseCoord(p.latitude);
+      const providerLng = parseCoord(p.longitude);
 
-        return {
-          ...p,
-          distance_km: Math.round(dist * 10) / 10,
-          categories: normalizeCategories(p.service_categories),
-          rating_value: normalizeRating(p.rating),
-        };
-      })
-      .filter((p) => {
+      const dist = calculateDistance(lat!, lng!, providerLat!, providerLng!);
+
+      return {
+        ...p,
+        distance_km: Math.round(dist * 10) / 10,
+        categories: normalizeCategories(p.service_categories),
+        rating_value: normalizeRating(p.rating),
+      };
+    });
+
+    // -------------------------
+    // Apply filters
+    // -------------------------
+    const results = list
+      .filter((p: any) => {
         if (p.distance_km > radius) return false;
 
         if (category && category !== "all") {
-          const match = p.categories.some(
-            (c) => c.toLowerCase() === category.toLowerCase()
-          );
-          if (!match) return false;
+          if (
+            !p.categories.some(
+              (c: string) => c.toLowerCase() === category.toLowerCase()
+            )
+          ) {
+            return false;
+          }
         }
 
         if (minRating > 0 && p.rating_value < minRating) return false;
 
         return true;
       })
-      .sort((a, b) => a.distance_km - b.distance_km);
+      .sort((a: any, b: any) => a.distance_km - b.distance_km);
 
     return new Response(
       JSON.stringify({
@@ -122,7 +192,7 @@ Deno.serve(async (req) => {
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: any) {
     return new Response(
       JSON.stringify({
         success: false,
@@ -132,4 +202,3 @@ Deno.serve(async (req) => {
     );
   }
 });
-
