@@ -4,18 +4,23 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
 // DEV MODE: Allow Admin signups without token
 const DEV_MODE_ALLOW_ADMIN_SIGNUP = true;
 
-// --- Helper utilities ---
+// --------------------
+// Helper utilities
+// --------------------
 function normalizePhoneNumber(phone: string): string {
   const digitsOnly = phone.replace(/\D/g, "");
+
   if (digitsOnly.startsWith("0")) return "+233" + digitsOnly.substring(1);
   if (digitsOnly.startsWith("233")) return "+" + digitsOnly;
   if (phone.startsWith("+233")) return phone;
+
   return "+233" + digitsOnly;
 }
 
@@ -23,6 +28,7 @@ async function hashPassword(password: string): Promise<string> {
   const salt = "farmconnect_salt_2025";
   const data = new TextEncoder().encode(password + salt);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+
   return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -39,12 +45,18 @@ function toIntOrNull(value: unknown): number | null {
 }
 
 function toStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(String).map((v) => v.trim()).filter(Boolean);
-  if (typeof value === "string") return value.split(",").map((v) => v.trim()).filter(Boolean);
+  if (Array.isArray(value))
+    return value.map(String).map((v) => v.trim()).filter(Boolean);
+
+  if (typeof value === "string")
+    return value.split(",").map((v) => v.trim()).filter(Boolean);
+
   return [];
 }
 
-// --- Main Handler ---
+// --------------------
+// Main Handler
+// --------------------
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -52,12 +64,15 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabaseAdmin = createClient(
-  Deno.env.get("SUPABASE_URL")!,
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+      }
     );
 
     const body = await req.json();
+
     const {
       name,
       phone,
@@ -71,44 +86,53 @@ Deno.serve(async (req: Request) => {
       ...roleSpecificFields
     } = body;
 
-    if (!phone || !password || !role) throw new Error("Missing required fields: phone, password, and role");
+    if (!phone || !password || !role)
+      throw new Error("Missing required fields: phone, password, role");
 
-    if (!["farmer", "provider", "admin"].includes(role)) throw new Error("Invalid role");
+    if (!["farmer", "provider", "admin"].includes(role))
+      throw new Error("Invalid role");
 
-    // Admin validation
+    // Admin token validation (only allow bypass in DEV)
     if (role === "admin" && !DEV_MODE_ALLOW_ADMIN_SIGNUP && !admin_invite_token) {
       throw new Error("Admin registration requires invite token");
     }
 
+    // Normalize Ghana phone number
     const normalizedPhone = normalizePhoneNumber(phone);
     if (!normalizedPhone.match(/^\+233\d{9}$/)) {
       throw new Error("Invalid Ghana phone number format (+233XXXXXXXXX)");
     }
 
-    // Check if phone exists
+    // Prevent duplicate phone registration
     const { data: existingUser } = await supabaseAdmin
       .from("users")
       .select("id, phone")
       .eq("phone", normalizedPhone)
       .maybeSingle();
 
-    if (existingUser) throw new Error("Phone number already registered. Please log in instead.");
+    if (existingUser)
+      throw new Error("Phone number already registered. Please log in instead.");
 
-    // Create auth user
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      phone: normalizedPhone,
-      email: email || undefined,
-      password,
-      phone_confirm: true,
-      email_confirm: true,
-    });
+    // --------------------
+    // Create Auth User
+    // --------------------
+    const { data: authData, error: authError } =
+      await supabaseAdmin.auth.admin.createUser({
+        phone: normalizedPhone,
+        email: email || undefined,
+        password,
+        phone_confirm: true,
+        email_confirm: true,
+      });
 
     if (authError) throw new Error("Auth creation failed: " + authError.message);
 
     const userId = authData.user?.id;
     if (!userId) throw new Error("Failed to retrieve auth user ID");
 
-    // Build user record
+    // --------------------
+    // Build DB Insert Data
+    // --------------------
     const insertData: Record<string, any> = {
       id: userId,
       name: name || "User",
@@ -126,23 +150,32 @@ Deno.serve(async (req: Request) => {
       created_at: new Date().toISOString(),
     };
 
-    // Role-specific fields
+    // Farmer fields
     if (role === "farmer") {
       insertData.farm_size = roleSpecificFields.farm_size || null;
       insertData.crop_types = toStringArray(roleSpecificFields.crop_types);
       insertData.num_workers = toIntOrNull(roleSpecificFields.num_workers);
     }
 
+    // Provider fields
     if (role === "provider") {
       insertData.business_name = roleSpecificFields.business_name || null;
-      insertData.contact_person = roleSpecificFields.contact_person || name || null;
-      insertData.service_categories = toStringArray(roleSpecificFields.service_categories);
-      insertData.service_description = roleSpecificFields.service_description || null;
+      insertData.contact_person =
+        roleSpecificFields.contact_person || name || null;
+      insertData.service_categories = toStringArray(
+        roleSpecificFields.service_categories
+      );
+      insertData.service_description =
+        roleSpecificFields.service_description || null;
       insertData.pricing_info = roleSpecificFields.pricing_info ?? null;
-      insertData.years_experience = toIntOrNull(roleSpecificFields.years_experience);
+      insertData.years_experience = toIntOrNull(
+        roleSpecificFields.years_experience
+      );
     }
 
-    // Insert into users table
+    // --------------------
+    // Insert User Record
+    // --------------------
     const { data: user, error: userError } = await supabaseAdmin
       .from("users")
       .insert(insertData)
@@ -156,21 +189,35 @@ Deno.serve(async (req: Request) => {
 
     if (!user) throw new Error("No user returned after insert");
 
-    console.log("✅ User inserted successfully:", user);
-
     return new Response(
       JSON.stringify({
         success: true,
         message: "Account created successfully",
         user,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 200,
+      }
     );
   } catch (error) {
     console.error("Signup error:", error);
+
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      JSON.stringify({
+        success: false,
+        error: (error as Error).message,
+      }),
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+        status: 400,
+      }
     );
   }
 });

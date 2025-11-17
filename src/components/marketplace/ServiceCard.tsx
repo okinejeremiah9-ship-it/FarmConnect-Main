@@ -72,6 +72,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
 
   return (
     <div className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all border border-gray-200 overflow-hidden flex flex-col">
+      {/* Image / Icon */}
       <div className="relative h-48 bg-gradient-to-br from-green-100 to-blue-100">
         {service.images && service.images.length > 0 ? (
           <img
@@ -87,6 +88,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           </div>
         )}
 
+        {/* Tags */}
         <div className="absolute top-3 left-3 flex flex-wrap gap-2">
           {service.category && (
             <span
@@ -98,24 +100,24 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
                 service.category.slice(1)}
             </span>
           )}
-          {service.distanceKm !== undefined &&
-            service.distanceKm !== null && (
-              <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white text-emerald-700 shadow-sm flex items-center gap-1">
-                <Ruler className="w-3 h-3" />
-                {Number(service.distanceKm).toFixed(1)} km
-              </span>
-            )}
+
+          {service.distanceKm !== undefined && service.distanceKm !== null && (
+            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white text-emerald-700 shadow-sm flex items-center gap-1">
+              <Ruler className="w-3 h-3" />
+              {Number(service.distanceKm).toFixed(1)} km
+            </span>
+          )}
         </div>
       </div>
 
+      {/* Content */}
       <div className="flex-1 flex flex-col p-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 leading-tight">
-            {service.title}
-          </h3>
-          <p className="text-sm text-gray-500">{service.providerName}</p>
-        </div>
+        <h3 className="text-lg font-semibold text-gray-900 leading-tight">
+          {service.title}
+        </h3>
+        <p className="text-sm text-gray-500">{service.providerName}</p>
 
+        {/* Rating */}
         {rating !== null && (
           <div className="flex items-center gap-2 mt-3">
             <span className="inline-flex items-center gap-1 text-sm font-medium text-gray-900">
@@ -126,12 +128,14 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           </div>
         )}
 
+        {/* Description */}
         {service.description && (
           <p className="mt-3 text-sm text-gray-600 line-clamp-3 leading-relaxed">
             {service.description}
           </p>
         )}
 
+        {/* Details */}
         <dl className="mt-4 space-y-2 text-sm text-gray-600">
           {service.location && (
             <div className="flex items-start gap-2">
@@ -139,6 +143,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               <span>{service.location}</span>
             </div>
           )}
+
           {(service.price || service.pricingInfo) && (
             <div className="flex items-start gap-2">
               <DollarSign className="w-4 h-4 mt-0.5 text-gray-400" />
@@ -154,6 +159,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
               )}
             </div>
           )}
+
           {service.availableDates && service.availableDates.length > 0 && (
             <div className="flex items-start gap-2">
               <Calendar className="w-4 h-4 mt-0.5 text-gray-400" />
@@ -165,6 +171,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           )}
         </dl>
 
+        {/* Specializations */}
         {service.specializations && service.specializations.length > 0 && (
           <div className="mt-4">
             <p className="text-xs uppercase tracking-wide text-gray-400 mb-2">
@@ -188,33 +195,32 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           </div>
         )}
 
+        {/* Buttons */}
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2">
           <button
             onClick={() => onViewDetails?.(service)}
             className="w-full bg-gray-100 text-gray-700 py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center"
           >
-            <Eye className="w-4 h-4 mr-1" />
-            Details
+            <Eye className="w-4 h-4 mr-1" /> Details
           </button>
+
           <button
             onClick={() => onMessageProvider?.(service)}
             disabled={!onMessageProvider}
-            className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
           >
-            <MessageSquare className="w-4 h-4 mr-1" />
-            Message
+            <MessageSquare className="w-4 h-4 mr-1" /> Message
           </button>
+
           <button
             onClick={() => onBookService?.(service)}
             disabled={!onBookService || service.price == null}
-            className="w-full bg-green-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+            className="w-full bg-green-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center"
           >
-            <Calendar className="w-4 h-4 mr-1" />
-            Book
+            <Calendar className="w-4 h-4 mr-1" /> Book
           </button>
         </div>
       </div>
     </div>
   );
 };
-

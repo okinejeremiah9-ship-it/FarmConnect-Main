@@ -1,64 +1,45 @@
 export interface ServiceListing {
   id: string;
+
+  // Provider info
   providerId: string;
   providerName: string;
   providerRating?: number | null;
+
+  // Basic service info
   title: string;
   category?: string | null;
   description?: string | null;
+
+  // Pricing (optional because some providers only use pricingInfo)
   price?: number | null;
   priceUnit?: 'hour' | 'day' | 'session' | 'fixed';
   pricingInfo?: string | null;
+
+  // Location details (optional)
   location?: string | null;
   district?: string | null;
+  gps_enabled?: boolean;
+
+  // Coordinates
   coordinates?: {
     lat: number;
     lng: number;
   };
   distanceKm?: number | null;
+
+  // Availability
   availability?: 'available' | 'busy' | 'unavailable';
   availableDates?: string[];
+
+  // Extra provider info
   equipment?: string[];
   specializations?: string[];
   images?: string[];
+
+  // Meta
   createdAt?: string;
   updatedAt?: string;
   phone?: string | null;
   email?: string | null;
-}
-
-export interface ServiceFilters {
-  category?: string;
-  radiusKm?: number;
-  minRating?: number;
-  search?: string;
-}
-
-export interface Booking {
-  id: string;
-  farmerId: string;
-  farmerName: string;
-  serviceId: string;
-  serviceTitle: string;
-  providerId: string;
-  providerName: string;
-  status: 'pending' | 'accepted' | 'declined' | 'in-progress' | 'completed' | 'cancelled';
-  scheduledDate: string;
-  duration: number;
-  totalPrice: number;
-  location: string;
-  notes: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  bookingId: string;
-  senderId: string;
-  senderName: string;
-  receiverId: string;
-  message: string;
-  timestamp: string;
-  isRead: boolean;
 }

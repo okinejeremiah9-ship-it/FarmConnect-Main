@@ -6,6 +6,7 @@ import { ServiceFiltersComponent } from "./ServiceFilters";
 import { ServiceDetailsModal } from "./ServiceDetailsModal";
 import { BookingModal } from "../bookings/BookingModal";
 import { ChatModal } from "./ChatModal";
+
 import { MapPin, AlertTriangle, Crosshair } from "lucide-react";
 import { mapAPI } from "../../lib/api";
 import { useUserSession } from "../../contexts/UserSessionContext";
@@ -15,9 +16,9 @@ import { normalizeArrayField } from "../../utils/profile";
 
 const DEFAULT_RADIUS = 50;
 
+// Convert "₵300 per hour" → { price: 300, unit: "hour" }
 const parsePriceInfo = (raw?: string | null) => {
   if (!raw) return { price: null, unit: "session" };
-
   const num = raw.match(/(\d+[\.,]?\d*)/);
   const price = num ? parseFloat(num[1].replace(",", "")) : null;
 
@@ -40,8 +41,8 @@ const generateAvailableDates = (num = 5) =>
 
 const applySearchFilter = (items: ServiceListing[], query: string) => {
   if (!query.trim()) return items;
-
   const q = query.toLowerCase();
+
   return items.filter((s) => {
     const fields = [
       s.title,
@@ -60,21 +61,21 @@ const applySearchFilter = (items: ServiceListing[], query: string) => {
 
 export const ServiceMarketplace: React.FC = () => {
   const { user: sessionUser } = useUserSession();
+
   const [services, setServices] = useState<ServiceListing[]>([]);
   const [filtered, setFiltered] = useState<ServiceListing[]>([]);
   const [filters, setFilters] = useState<ServiceFilters>({
     radiusKm: DEFAULT_RADIUS,
   });
   const [search, setSearch] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [userLocation, setUserLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [locationSource, setLocationSource] =
-    useState<"gps" | "profile" | null>(null);
 
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationSource, setLocationSource] = useState<"gps" | "profile" | null>(null);
+
+  // ------------------ GEOLOCATION HOOK ------------------
   const {
     coordinates,
     captureLocation,
@@ -87,7 +88,7 @@ export const ServiceMarketplace: React.FC = () => {
     userId: sessionUser?.id,
   });
 
-  // Load GPS or fallback profile location
+  // Load GPS OR fallback to profile’s stored coords
   useEffect(() => {
     if (coordinates) {
       setUserLocation({
@@ -125,20 +126,13 @@ export const ServiceMarketplace: React.FC = () => {
     }
   }, [coordinates, sessionUser?.id]);
 
+  // Format raw provider into marketplace-friendly card
   const mapProviderToListing = (p: any): ServiceListing => {
     const categories = normalizeArrayField(p.service_categories);
-
     const { price, unit } = parsePriceInfo(p.pricing_info);
 
-    const latitude =
-      p.latitude !== undefined && p.latitude !== null
-        ? parseFloat(String(p.latitude))
-        : undefined;
-
-    const longitude =
-      p.longitude !== undefined && p.longitude !== null
-        ? parseFloat(String(p.longitude))
-        : undefined;
+    const latitude = p.latitude != null ? parseFloat(String(p.latitude)) : undefined;
+    const longitude = p.longitude != null ? parseFloat(String(p.longitude)) : undefined;
 
     const distanceKm =
       typeof p.distance_km === "number"
@@ -147,26 +141,25 @@ export const ServiceMarketplace: React.FC = () => {
         ? parseFloat(String(p.distance_km))
         : null;
 
-    const ratingValue = p.rating_value
-      ? parseFloat(String(p.rating_value))
-      : 0;
+    const ratingValue = p.rating_value ? parseFloat(String(p.rating_value)) : 0;
 
     return {
       id: p.id,
       providerId: p.id,
-      providerName:
-        p.business_name || p.name || p.contact_person || "Service Provider",
+      providerName: p.business_name || p.name || p.contact_person || "Service Provider",
       providerRating: ratingValue,
 
       title: p.business_name || p.service_description || "Service",
       description: p.service_description,
       category: categories[0] || "General",
       specializations: categories,
+
       pricingInfo: p.pricing_info,
       price,
       priceUnit: unit,
 
       location: p.address ?? "Location not provided",
+
       coordinates:
         latitude !== undefined && longitude !== undefined
           ? { lat: latitude, lng: longitude }
@@ -176,11 +169,13 @@ export const ServiceMarketplace: React.FC = () => {
       availableDates: generateAvailableDates(),
 
       images: p.profile_pic ? [p.profile_pic] : undefined,
+
       phone: p.phone,
       email: p.email,
     };
   };
 
+  // Load providers from API
   const fetchProviders = async (active: ServiceFilters) => {
     if (!userLocation) {
       setLocationError("❗ No location available.");
@@ -217,10 +212,12 @@ export const ServiceMarketplace: React.FC = () => {
     }
   };
 
+  // Fetch once we have location
   useEffect(() => {
     if (userLocation) fetchProviders(filters);
   }, [userLocation]);
 
+  // Reapply text search
   useEffect(() => {
     setFiltered(applySearchFilter(services, search));
   }, [search, services]);
@@ -229,8 +226,7 @@ export const ServiceMarketplace: React.FC = () => {
     if (!userLocation) return null;
 
     const coords = formatCoords(userLocation.lat, userLocation.lng);
-    const src =
-      locationSource === "gps" ? "current GPS location" : "your farm profile";
+    const src = locationSource === "gps" ? "current GPS location" : "your farm profile";
 
     return `Showing providers within ${filters.radiusKm} km of ${coords} (${src})`;
   }, [userLocation, locationSource, filters.radiusKm]);
@@ -241,9 +237,7 @@ export const ServiceMarketplace: React.FC = () => {
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto p-6">
           <h1 className="text-2xl font-bold">Service Marketplace</h1>
-          <p className="text-gray-600">
-            Find trusted agricultural services near you
-          </p>
+          <p className="text-gray-600">Find trusted agricultural services near you</p>
 
           {locationSummary && (
             <div className="mt-3 flex text-sm text-gray-500">
@@ -261,7 +255,7 @@ export const ServiceMarketplace: React.FC = () => {
             className="mt-4 bg-green-600 text-white px-4 py-2 rounded-lg flex items-center"
           >
             <Crosshair className="w-5 h-5 mr-2" />
-            {isCapturing ? "Capturing..." : "Use Current Location"}
+            {isCapturing ? "Capturing…" : "Use Current Location"}
           </button>
         </div>
       </div>
@@ -275,9 +269,14 @@ export const ServiceMarketplace: React.FC = () => {
           </div>
         )}
 
-        <ServiceFiltersComponent
-          filters={filters}
-          onFiltersChange={(f) => setFilters(f)}
+        <ServiceFiltersComponent filters={filters} onFiltersChange={(f) => setFilters(f)} />
+
+        <input
+          type="text"
+          placeholder="Search services…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="mt-4 w-full p-3 border rounded-lg"
         />
 
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 mt-8">

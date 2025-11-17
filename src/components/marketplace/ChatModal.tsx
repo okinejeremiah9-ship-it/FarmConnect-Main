@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useRef } from "react";
-import { X, Send, Phone, Video, Mic, MicOff, Image as ImageIcon, Play, Pause } from "lucide-react";
-import { messagesAPI } from "../../lib/api/messagesAPI";
-import { uploadFile, STORAGE_BUCKETS } from "../../lib/supabase";
-import { useRealtimeMessages } from "../../hooks/useRealtimeSubscription";
+import {
+  X,
+  Send,
+  Mic,
+  MicOff,
+  Image as ImageIcon,
+  Play,
+  Pause,
+} from "lucide-react";
+import {
+  uploadFile,
+  STORAGE_BUCKETS,
+  getOrCreateChatSession,
+  sendMessage,
+  getChatMessages,
+  subscribeToMessages,
+} from "../../lib/supabase";
 
 interface ChatModalProps {
   service: {
@@ -11,8 +24,8 @@ interface ChatModalProps {
     title: string;
     providerProfilePic?: string;
   };
-  userId: string; // Logged-in user ID
-  userName: string; // Logged-in user name
+  userId: string;
+  userName: string;
   onClose: () => void;
 }
 
@@ -26,49 +39,82 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [sending, setSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // ✅ Real-time messages
-  const { messages, loading } = useRealtimeMessages(userId, service.providerId, null);
-
+  // ------------------------------------------------------
+  // INIT CHAT SESSION + REAL-TIME SUBSCRIPTION
+  // ------------------------------------------------------
   useEffect(() => {
-    scrollToBottom();
+    const initChat = async () => {
+      try {
+        const session = await getOrCreateChatSession(
+          userId,
+          service.providerId
+        );
+        setSessionId(session.id);
+
+        // Load existing chat messages
+        const initialMessages = await getChatMessages(session.id);
+        setMessages(initialMessages);
+
+        // Subscribe to new real-time messages
+        const subscription = subscribeToMessages(session.id, (newMsg) => {
+          setMessages((prev) => [...prev, newMsg]);
+        });
+
+        return () => {
+          subscription.unsubscribe();
+        };
+      } catch (err) {
+        console.error("Chat initialization failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initChat();
+  }, [userId, service.providerId]);
+
+  // Scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // 🎤 Start recording audio
+  // ------------------------------------------------------
+  // VOICE RECORDING
+  // ------------------------------------------------------
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
 
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
+      recorder.ondataavailable = (e) => audioChunksRef.current.push(e.data);
 
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        setAudioBlob(audioBlob);
+      recorder.onstop = () => {
+        const audio = new Blob(audioChunksRef.current, {
+          type: "audio/webm",
+        });
+        setAudioBlob(audio);
         stream.getTracks().forEach((t) => t.stop());
       };
 
-      mediaRecorder.start();
+      recorder.start();
       setIsRecording(true);
-    } catch (error) {
-      console.error("Microphone error:", error);
+    } catch {
       alert("Microphone access denied");
     }
   };
 
-  // 🛑 Stop recording
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -76,77 +122,100 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
-  // 📨 Send text message
+  // ------------------------------------------------------
+  // SEND TEXT
+  // ------------------------------------------------------
   const sendTextMessage = async () => {
-    if (!messageText.trim()) return;
+    if (!messageText.trim() || !sessionId) return;
 
+    setSending(true);
     try {
-      setSending(true);
-      await messagesAPI.send({
-        sender_id: userId,
-        receiver_id: service.providerId,
-        message_type: "text",
-        content: messageText.trim(),
-      });
+      await sendMessage(
+        sessionId,
+        userId,
+        service.providerId,
+        messageText.trim()
+      );
       setMessageText("");
-    } catch (error) {
-      console.error("Failed to send text:", error);
+    } catch (e) {
+      console.error("Send text failed:", e);
     } finally {
       setSending(false);
     }
   };
 
-  // 🖼️ Send image
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ------------------------------------------------------
+  // SEND IMAGE
+  // ------------------------------------------------------
+  const handleImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !sessionId) return;
 
+    setSending(true);
     try {
-      setSending(true);
-      const fileName = `image_${Date.now()}_${file.name}`;
-      const filePath = `${userId}/${fileName}`;
-      const imageUrl = await uploadFile(STORAGE_BUCKETS.IMAGES, filePath, file);
-
-      await messagesAPI.send({
-        sender_id: userId,
-        receiver_id: service.providerId,
-        message_type: "image",
-        media_url: imageUrl,
-      });
-    } catch (error) {
-      console.error("Image upload failed:", error);
+      const path = `${userId}/img_${Date.now()}_${file.name}`;
+      const imageUrl = await uploadFile(
+        STORAGE_BUCKETS.IMAGES,
+        path,
+        file
+      );
+      await sendMessage(
+        sessionId,
+        userId,
+        service.providerId,
+        "",
+        "image",
+        imageUrl
+      );
+    } catch (e) {
+      console.error("Image upload failed:", e);
     } finally {
       setSending(false);
     }
   };
 
-  // 🔊 Send audio
+  // ------------------------------------------------------
+  // SEND AUDIO
+  // ------------------------------------------------------
   const sendAudioMessage = async () => {
-    if (!audioBlob) return;
-    try {
-      setSending(true);
-      const fileName = `audio_${Date.now()}.webm`;
-      const filePath = `${userId}/${fileName}`;
-      const audioUrl = await uploadFile(STORAGE_BUCKETS.AUDIO, filePath, audioBlob);
+    if (!audioBlob || !sessionId) return;
 
-      await messagesAPI.send({
-        sender_id: userId,
-        receiver_id: service.providerId,
-        message_type: "audio",
-        media_url: audioUrl,
-      });
+    setSending(true);
+    try {
+      const path = `${userId}/audio_${Date.now()}.webm`;
+      const audioUrl = await uploadFile(
+        STORAGE_BUCKETS.AUDIO,
+        path,
+        audioBlob
+      );
+      await sendMessage(
+        sessionId,
+        userId,
+        service.providerId,
+        "",
+        "audio",
+        audioUrl
+      );
+
       setAudioBlob(null);
-    } catch (error) {
-      console.error("Audio send failed:", error);
+    } catch (e) {
+      console.error("Audio send failed:", e);
     } finally {
       setSending(false);
     }
   };
 
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  };
+  const formatTime = (timestamp: string) =>
+    new Date(timestamp).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
+  // ------------------------------------------------------
+  // UI
+  // ------------------------------------------------------
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-xl max-w-2xl w-full h-[600px] flex flex-col">
@@ -157,7 +226,6 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               {service.providerProfilePic ? (
                 <img
                   src={service.providerProfilePic}
-                  alt={service.providerName}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -167,45 +235,61 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               )}
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{service.providerName}</h3>
+              <h3 className="font-semibold text-gray-900">
+                {service.providerName}
+              </h3>
               <p className="text-sm text-gray-600">{service.title}</p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <button className="p-2 text-gray-400 hover:text-gray-600">
-              <Phone className="w-5 h-5" />
-            </button>
-            <button className="p-2 text-gray-400 hover:text-gray-600">
-              <Video className="w-5 h-5" />
-            </button>
-            <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
           {loading ? (
-            <div className="text-center text-gray-500 py-8">Loading messages...</div>
+            <div className="text-center text-gray-500 py-8">
+              Loading messages...
+            </div>
           ) : messages.length === 0 ? (
-            <div className="text-center text-gray-500 py-8">No messages yet.</div>
+            <div className="text-center text-gray-500 py-8">
+              No messages yet.
+            </div>
           ) : (
             messages.map((msg) => {
               const isSender = msg.sender_id === userId;
+
               return (
-                <div key={msg.id} className={`flex ${isSender ? "justify-end" : "justify-start"}`}>
+                <div
+                  key={msg.id}
+                  className={`flex ${
+                    isSender ? "justify-end" : "justify-start"
+                  }`}
+                >
                   <div
                     className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                      isSender ? "bg-green-600 text-white" : "bg-white border border-gray-200"
+                      isSender
+                        ? "bg-green-600 text-white"
+                        : "bg-white border border-gray-200"
                     }`}
                   >
                     {msg.message_type === "text" && <p>{msg.content}</p>}
                     {msg.message_type === "image" && (
-                      <img src={msg.media_url} alt="sent" className="rounded-lg max-w-full" />
+                      <img
+                        src={msg.media_url}
+                        className="rounded-lg max-w-full"
+                      />
                     )}
-                    {msg.message_type === "audio" && <AudioPlayer src={msg.media_url} />}
-                    <div className={`text-xs mt-1 ${isSender ? "text-green-100" : "text-gray-500"}`}>
+                    {msg.message_type === "audio" && (
+                      <AudioPlayer src={msg.media_url} />
+                    )}
+
+                    <div className="text-xs mt-1 text-gray-400">
                       {formatTime(msg.created_at)}
                     </div>
                   </div>
@@ -213,31 +297,14 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               );
             })
           )}
+
           <div ref={messagesEndRef} />
         </div>
-
-        {/* Audio Preview */}
-        {audioBlob && (
-          <div className="px-4 py-2 bg-yellow-50 border-t border-yellow-200 flex justify-between items-center">
-            <span className="text-sm text-gray-700">Audio recorded</span>
-            <div className="space-x-2">
-              <button onClick={() => setAudioBlob(null)} className="px-3 py-1 bg-gray-200 rounded">
-                Cancel
-              </button>
-              <button
-                onClick={sendAudioMessage}
-                disabled={sending}
-                className="px-3 py-1 bg-green-600 text-white rounded"
-              >
-                Send Audio
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Input Area */}
         <div className="border-t border-gray-200 p-4 bg-white">
           <div className="flex items-center gap-2">
+            {/* Image Upload */}
             <input
               type="file"
               accept="image/*"
@@ -252,15 +319,23 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               <ImageIcon className="h-5 w-5" />
             </label>
 
+            {/* Voice */}
             <button
               onClick={isRecording ? stopRecording : startRecording}
               className={`p-2 rounded-lg ${
-                isRecording ? "bg-red-100 text-red-600" : "text-gray-600 hover:bg-gray-100"
+                isRecording
+                  ? "bg-red-100 text-red-600"
+                  : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              {isRecording ? (
+                <MicOff className="h-5 w-5" />
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
             </button>
 
+            {/* Text Input */}
             <input
               type="text"
               value={messageText}
@@ -271,6 +346,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               disabled={sending || isRecording}
             />
 
+            {/* Send */}
             <button
               onClick={sendTextMessage}
               disabled={!messageText.trim() || sending}
@@ -279,8 +355,12 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               <Send className="h-5 w-5" />
             </button>
           </div>
+
+          {/* Recording status */}
           {isRecording && (
-            <p className="text-sm text-red-600 mt-2 animate-pulse">Recording... Click mic to stop</p>
+            <p className="text-sm text-red-600 mt-2 animate-pulse">
+              Recording... Click mic to stop
+            </p>
           )}
         </div>
       </div>
@@ -288,28 +368,36 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   );
 };
 
+// ------------------------------------------------------
+// AUDIO PLAYER COMPONENT
+// ------------------------------------------------------
 const AudioPlayer: React.FC<{ src: string }> = ({ src }) => {
   const [playing, setPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
-
-  const togglePlay = () => {
-    if (audioRef.current) {
-      if (playing) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setPlaying(!playing);
-    }
-  };
+  const ref = useRef<HTMLAudioElement>(null);
 
   return (
     <div className="flex items-center gap-2 mt-1">
-      <button onClick={togglePlay} className="p-1 rounded-full bg-gray-200">
-        {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+      <button
+        onClick={() => {
+          if (!ref.current) return;
+          if (playing) ref.current.pause();
+          else ref.current.play();
+          setPlaying(!playing);
+        }}
+        className="p-1 rounded-full bg-gray-200"
+      >
+        {playing ? (
+          <Pause className="h-4 w-4" />
+        ) : (
+          <Play className="h-4 w-4" />
+        )}
       </button>
-      <audio ref={audioRef} src={src} onEnded={() => setPlaying(false)} />
-      <span className="text-xs text-gray-600">Voice Message</span>
+
+      <audio
+        ref={ref}
+        src={src}
+        onEnded={() => setPlaying(false)}
+      />
     </div>
   );
 };

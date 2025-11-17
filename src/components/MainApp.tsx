@@ -38,7 +38,11 @@ interface MainAppProps {
   onUserUpdate: (updatedUser: any) => Promise<void> | void;
 }
 
-export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }) => {
+export const MainApp: React.FC<MainAppProps> = ({
+  user,
+  onLogout,
+  onUserUpdate,
+}) => {
   const [currentView, setCurrentView] = useState<string>("dashboard");
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [navigationHistory, setNavigationHistory] = useState<string[]>(["dashboard"]);
@@ -180,35 +184,66 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         return <FarmerDashboard onNavigate={navigateTo} />;
 
       case "profile":
-        return <ProfilePage user={user} onBack={navigateBack} onProfileUpdate={handleProfileUpdate} />;
+        return (
+          <ProfilePage
+            user={user}
+            onBack={navigateBack}
+            onProfileUpdate={handleProfileUpdate}
+          />
+        );
 
       case "map":
         return (
           <>
-            <PageHeader title="Service Map" subtitle="Find nearby service providers" onBack={navigateBack} />
-            <ServiceMap onProviderSelect={(p) => navigateTo("provider-profile", p.id)} />
+            <PageHeader
+              title="Service Map"
+              subtitle="Find nearby service providers"
+              onBack={navigateBack}
+            />
+            <ServiceMap
+              onProviderSelect={(p) =>
+                navigateTo("provider-profile", p.id)
+              }
+            />
           </>
         );
 
       case "marketplace":
         return (
           <>
-            <PageHeader title="Service Marketplace" subtitle="Browse and book agricultural services" onBack={navigateBack} />
-            <ServiceMarketplace />
+            <PageHeader
+              title="Service Marketplace"
+              subtitle="Browse and book agricultural services"
+              onBack={navigateBack}
+            />
+            <ServiceMarketplace onNavigate={navigateTo} /> {/* newer version kept */}
           </>
         );
 
       case "provider-profile":
         return (
           <>
-            <PageHeader title="Provider Profile" subtitle="Reviews & Service Info" onBack={navigateBack} />
-            <UserProfile userId={selectedProviderId || ""} isOwnProfile={false} />
+            <PageHeader
+              title="Provider Profile"
+              subtitle="Reviews & Service Info"
+              onBack={navigateBack}
+            />
+            <UserProfile
+              userId={selectedProviderId || ""}
+              isOwnProfile={false}
+            />
           </>
         );
 
       case "bookings":
       case "requests":
-        return <BookingsPage userId={user.id} userRole={user.role} onNavigate={navigateTo} />;
+        return (
+          <BookingsPage
+            userId={user.id}
+            userRole={user.role}
+            onNavigate={navigateTo}
+          />
+        );
 
       case "wallet":
         return (
@@ -238,7 +273,13 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
             </>
           );
         }
-        return <DisputesPage userId={user.id} userRole={user.role} onBack={navigateBack} />;
+        return (
+          <DisputesPage
+            userId={user.id}
+            userRole={user.role}
+            onBack={navigateBack}
+          />
+        );
 
       case "driver-tracking":
         return <DriverTrackingPage sessionId={trackingSessionId || ""} onComplete={navigateBack} />;
@@ -246,8 +287,15 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       case "live-tracking":
         return (
           <>
-            <PageHeader title="Live Tracking" subtitle="Real-time driver movement" onBack={navigateBack} />
-            <LiveTrackingView sessionId={trackingSessionId || ""} onBack={navigateBack} />
+            <PageHeader
+              title="Live Tracking"
+              subtitle="Real-time driver movement"
+              onBack={navigateBack}
+            />
+            <LiveTrackingView
+              sessionId={trackingSessionId || ""}
+              onBack={navigateBack}
+            />
           </>
         );
 
@@ -286,4 +334,3 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 };
 
 export default MainApp;
-
