@@ -1,11 +1,9 @@
 // Location: src/components/MainApp.tsx
 // Purpose: Core navigation container that controls app routing and GPS tracking view transitions.
 
-// Location: src/components/MainApp.tsx
-// Purpose: Core navigation & logic handler with permanent profile completion
-
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
+
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
@@ -47,7 +45,9 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
 
-  // ✅ Check profile completion status from session data
+  // -----------------------------------------------------------
+  // Profile Completion Check
+  // -----------------------------------------------------------
   useEffect(() => {
     const checkProfileStatus = async () => {
       if (!user || user.role === "admin") return;
@@ -60,17 +60,20 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
           .maybeSingle();
 
         if (error) throw error;
-        const isCompleted = data?.profile_completed ?? false;
-        setShowProfileSetup(!isCompleted);
-      } catch (err) {
-        console.error("Profile check failed:", err);
+
+        const completed = data?.profile_completed ?? false;
+        setShowProfileSetup(!completed);
+      } catch (error) {
+        console.error("Profile completion check failed:", error);
       }
     };
 
     checkProfileStatus();
   }, [user]);
 
-  // ✅ Restore ongoing tracking sessions
+  // -----------------------------------------------------------
+  // Restore Tracking Sessions After Refresh
+  // -----------------------------------------------------------
   useEffect(() => {
     const sessionId = sessionStorage.getItem("pending_tracking_session");
     const type = sessionStorage.getItem("pending_tracking_type");
@@ -86,14 +89,13 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
     }
   }, []);
 
-  // ✅ Update profile and mark completed
+  // -----------------------------------------------------------
+  // Profile Update Handler
+  // -----------------------------------------------------------
   const handleProfileUpdate = async (data: any) => {
     try {
       const targetUserId = user?.id ?? user?.user_id;
-
-      if (!targetUserId) {
-        throw new Error("Missing user identifier. Please sign in again.");
-      }
+      if (!targetUserId) throw new Error("Missing user ID. Please sign in again.");
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
@@ -108,11 +110,11 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       );
 
       const result = await response.json();
-
       if (!response.ok || !result.success) {
         throw new Error(result.error || "Failed to update profile");
       }
 
+      // Refresh the full profile
       const profileResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
         {
@@ -123,18 +125,15 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       );
 
       const profileResult = await profileResponse.json();
-
       if (!profileResponse.ok || !profileResult.success) {
         throw new Error(profileResult.error || "Failed to refresh profile");
       }
 
-      onUserUpdate(
-        normalizeUserProfile({
-          ...user,
-          ...profileResult.user,
-        })
-      );
+      const merged = normalizeUserProfile({ ...user, ...profileResult.user });
+
+      onUserUpdate(merged);
       setShowProfileSetup(false);
+
       return result.user;
     } catch (error) {
       console.error("Profile update error:", error);
@@ -142,26 +141,30 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
     }
   };
 
-  // 🧭 Page navigation handler
+  // -----------------------------------------------------------
+  // Navigation
+  // -----------------------------------------------------------
   const navigateTo = (view: string, providerId?: string, sessionId?: string) => {
     setNavigationHistory((prev) => [...prev, currentView]);
     setCurrentView(view);
+
     if (providerId) setSelectedProviderId(providerId);
     if (sessionId) setTrackingSessionId(sessionId);
   };
 
-  // 🔙 Go back
   const navigateBack = () => {
     if (navigationHistory.length > 0) {
-      const previousView = navigationHistory[navigationHistory.length - 1];
-      setNavigationHistory((prev) => prev.slice(0, -1));
-      setCurrentView(previousView);
+      const prev = navigationHistory[navigationHistory.length - 1];
+      setNavigationHistory((p) => p.slice(0, -1));
+      setCurrentView(prev);
     } else {
       setCurrentView("dashboard");
     }
   };
 
-  // 🧩 Render pages
+  // -----------------------------------------------------------
+  // Render Content by View
+  // -----------------------------------------------------------
   const renderContent = () => {
     switch (currentView) {
       case "dashboard":
@@ -182,23 +185,15 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       case "map":
         return (
           <>
-            <PageHeader
-              title="Service Map"
-              subtitle="Find nearby service providers"
-              onBack={navigateBack}
-            />
-            <ServiceMap onProviderSelect={(provider) => navigateTo("provider-profile", provider.id)} />
+            <PageHeader title="Service Map" subtitle="Find nearby service providers" onBack={navigateBack} />
+            <ServiceMap onProviderSelect={(p) => navigateTo("provider-profile", p.id)} />
           </>
         );
 
       case "marketplace":
         return (
           <>
-            <PageHeader
-              title="Service Marketplace"
-              subtitle="Browse and book agricultural services"
-              onBack={navigateBack}
-            />
+            <PageHeader title="Service Marketplace" subtitle="Browse and book agricultural services" onBack={navigateBack} />
             <ServiceMarketplace />
           </>
         );
@@ -206,11 +201,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       case "provider-profile":
         return (
           <>
-            <PageHeader
-              title="Provider Profile"
-              subtitle="View provider details and reviews"
-              onBack={navigateBack}
-            />
+            <PageHeader title="Provider Profile" subtitle="Reviews & Service Info" onBack={navigateBack} />
             <UserProfile userId={selectedProviderId || ""} isOwnProfile={false} />
           </>
         );
@@ -222,11 +213,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       case "wallet":
         return (
           <>
-            <PageHeader
-              title="My Wallet"
-              subtitle="Manage your funds and transactions"
-              onBack={navigateBack}
-            />
+            <PageHeader title="My Wallet" subtitle="Manage payments" onBack={navigateBack} />
             <WalletPage userId={user.id} />
           </>
         );
@@ -234,11 +221,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
       case "reviews":
         return (
           <>
-            <PageHeader
-              title="My Reviews"
-              subtitle="View reviews you've received"
-              onBack={navigateBack}
-            />
+            <PageHeader title="My Reviews" subtitle="Feedback from other users" onBack={navigateBack} />
             <UserReviews userId={user.id} />
           </>
         );
@@ -250,30 +233,20 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
         if (user.role === "admin") {
           return (
             <>
-              <PageHeader
-                title="Dispute Management"
-                subtitle="Review and resolve user disputes"
-                onBack={navigateBack}
-              />
+              <PageHeader title="Dispute Cases" subtitle="Manage reported issues" onBack={navigateBack} />
               <AdminDisputesPage adminId={user.id} />
             </>
           );
         }
         return <DisputesPage userId={user.id} userRole={user.role} onBack={navigateBack} />;
 
-      // 🚗 Driver tracking
       case "driver-tracking":
         return <DriverTrackingPage sessionId={trackingSessionId || ""} onComplete={navigateBack} />;
 
-      // 🌍 Live tracking view
       case "live-tracking":
         return (
           <>
-            <PageHeader
-              title="Live Tracking"
-              subtitle="Track driver location in real-time"
-              onBack={navigateBack}
-            />
+            <PageHeader title="Live Tracking" subtitle="Real-time driver movement" onBack={navigateBack} />
             <LiveTrackingView sessionId={trackingSessionId || ""} onBack={navigateBack} />
           </>
         );
@@ -283,7 +256,9 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
     }
   };
 
-  // 🧑🏾‍🌾 Show profile setup screen once
+  // -----------------------------------------------------------
+  // First-Time Profile Setup
+  // -----------------------------------------------------------
   if (showProfileSetup) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -298,7 +273,9 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
     );
   }
 
-  // 🏠 Default app shell
+  // -----------------------------------------------------------
+  // Main App Container
+  // -----------------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <Navigation user={user} onLogout={onLogout} onNavigate={navigateTo} />
@@ -309,3 +286,4 @@ export const MainApp: React.FC<MainAppProps> = ({ user, onLogout, onUserUpdate }
 };
 
 export default MainApp;
+
