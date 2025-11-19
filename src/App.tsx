@@ -11,13 +11,10 @@ import { SignupSuccessSplash } from "./components/auth/SignupSuccessSplash";
 import { WelcomeScreen } from "./components/auth/WelcomeScreen";
 import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 
-import DriverTrackingPage from "./components/tracking/DriverTrackingPage";
-import LiveTrackingView from "./components/tracking/LiveTrackingView";
 import { MainApp } from "./components/MainApp";
-import LandingPage from "./components/LandingPage"; // ✅ FIXED landing page
+import { LandingPage } from "./components/LandingPage";        // ✅ fixed import
 
 import { normalizeUserProfile } from "./utils/profile";
-
 import { Tractor } from "lucide-react";
 
 type AuthStep =
@@ -32,8 +29,10 @@ const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [authStep, setAuthStep] = useState<AuthStep>("login");
+
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>("");
+
   const [showAuth, setShowAuth] = useState(false);
 
   // -------------------------------------------------------
@@ -173,7 +172,7 @@ const App: React.FC = () => {
   }, [persistUser]);
 
   // -------------------------------------------------------
-  // LOADING
+  // Loading
   // -------------------------------------------------------
   if (loading) {
     return (
@@ -184,27 +183,36 @@ const App: React.FC = () => {
   }
 
   // -------------------------------------------------------
-  // USER LOGGED IN
+  // Logged-in user → Main App
   // -------------------------------------------------------
   if (user && user.is_verified) {
     return (
       <Router>
         <Routes>
-          <Route path="/*" element={<MainApp user={user} onLogout={handleLogout} onUserUpdate={persistUser} />} />
+          <Route
+            path="/*"
+            element={
+              <MainApp
+                user={user}
+                onLogout={handleLogout}
+                onUserUpdate={persistUser}
+              />
+            }
+          />
         </Routes>
       </Router>
     );
   }
 
   // -------------------------------------------------------
-  // WELCOME
+  // After signup → Welcome screen
   // -------------------------------------------------------
   if (authStep === "welcome" && pendingUser) {
     return <WelcomeScreen user={pendingUser} onComplete={handleWelcomeComplete} />;
   }
 
   // -------------------------------------------------------
-  // SPLASH
+  // Signup splash
   // -------------------------------------------------------
   if (authStep === "splash") {
     return (
@@ -215,13 +223,14 @@ const App: React.FC = () => {
   }
 
   // -------------------------------------------------------
-  // AUTH UI
+  // Auth UI
   // -------------------------------------------------------
   if (showAuth) {
     return (
       <Router>
         <Routes>
           <Route path="/admin-signup" element={<AdminSignupPage />} />
+
           <Route
             path="/*"
             element={
@@ -263,12 +272,31 @@ const App: React.FC = () => {
   }
 
   // -------------------------------------------------------
-  // LANDING PAGE
+  // Public Landing Page
   // -------------------------------------------------------
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route
+          path="/"
+          element={
+            <LandingPage
+              onLogin={() => {
+                setAuthStep("login");
+                setShowAuth(true);
+              }}
+              onSignupFarmer={() => {
+                setAuthStep("signup-farmer");
+                setShowAuth(true);
+              }}
+              onSignupProvider={() => {
+                setAuthStep("signup-provider");
+                setShowAuth(true);
+              }}
+            />
+          }
+        />
+
         <Route path="/admin-signup" element={<AdminSignupPage />} />
       </Routes>
     </Router>
