@@ -14,21 +14,11 @@ import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 import DriverTrackingPage from "./components/tracking/DriverTrackingPage";
 import LiveTrackingView from "./components/tracking/LiveTrackingView";
 import { MainApp } from "./components/MainApp";
-import { HowItWorks } from "./components/HowItWorks";
+import LandingPage from "./components/LandingPage"; // ✅ FIXED landing page
 
 import { normalizeUserProfile } from "./utils/profile";
-import {
-  Tractor,
-  Shield,
-  MapPin,
-  Users,
-  CheckCircle,
-  ArrowRight,
-  Phone,
-  Mail,
-  Menu,
-  X,
-} from "lucide-react";
+
+import { Tractor } from "lucide-react";
 
 type AuthStep =
   | "login"
@@ -41,18 +31,13 @@ type AuthStep =
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-
   const [authStep, setAuthStep] = useState<AuthStep>("login");
-
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [pendingPhone, setPendingPhone] = useState<string>("");
-
   const [showAuth, setShowAuth] = useState(false);
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // -------------------------------------------------------
-  // Persist user in localStorage
+  // Persist user
   // -------------------------------------------------------
   const persistUser = useCallback((rawUser: any | null) => {
     if (!rawUser) {
@@ -60,16 +45,12 @@ const App: React.FC = () => {
       localStorage.removeItem("user");
       return null;
     }
-
     const normalized = normalizeUserProfile(rawUser);
     setUser(normalized);
     localStorage.setItem("user", JSON.stringify(normalized));
     return normalized;
   }, []);
 
-  // -------------------------------------------------------
-  // Fetch latest profile from Supabase
-  // -------------------------------------------------------
   const fetchLatestUserProfile = useCallback(async (id: string) => {
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${id}`,
@@ -84,7 +65,6 @@ const App: React.FC = () => {
     if (!response.ok || !data.success) {
       throw new Error(data.error || "Failed to fetch user profile");
     }
-
     return data.user;
   }, []);
 
@@ -97,7 +77,6 @@ const App: React.FC = () => {
       }
 
       let merged = baseUser;
-
       if (baseUser?.id) {
         try {
           const latest = await fetchLatestUserProfile(baseUser.id);
@@ -114,9 +93,6 @@ const App: React.FC = () => {
     [fetchLatestUserProfile, persistUser]
   );
 
-  // -------------------------------------------------------
-  // Load session on startup
-  // -------------------------------------------------------
   useEffect(() => {
     const stored = localStorage.getItem("user");
     if (stored) {
@@ -130,9 +106,6 @@ const App: React.FC = () => {
     setLoading(false);
   }, [persistUser]);
 
-  // -------------------------------------------------------
-  // Login success
-  // -------------------------------------------------------
   const handleLoginSuccess = useCallback(
     async (loggedInUser: any) => {
       await refreshAndPersistUser(loggedInUser, { persist: true });
@@ -140,9 +113,6 @@ const App: React.FC = () => {
     [refreshAndPersistUser]
   );
 
-  // -------------------------------------------------------
-  // Signup success → move to splash
-  // -------------------------------------------------------
   const handleSignupSuccess = useCallback((phone: string) => {
     setPendingPhone(phone);
     setPendingUser(null);
@@ -150,9 +120,6 @@ const App: React.FC = () => {
     setShowAuth(true);
   }, []);
 
-  // -------------------------------------------------------
-  // Splash ended → fetch user → move to Welcome (or Login fallback)
-  // -------------------------------------------------------
   const handleSplashComplete = useCallback(async () => {
     if (!pendingPhone) {
       setAuthStep("login");
@@ -171,52 +138,42 @@ const App: React.FC = () => {
           },
           body: JSON.stringify({
             phone: pendingPhone,
-            fetch_user_only: true, // <-- NO PASSWORD NEEDED
+            fetch_user_only: true,
           }),
         }
       );
 
       const data = await response.json();
-
       if (response.ok && data.success && data.user) {
         const refreshed = await refreshAndPersistUser(data.user, {
           persist: false,
         });
         setPendingUser(refreshed);
-        setAuthStep("welcome"); // <-- VALID NOW
+        setAuthStep("welcome");
         return;
       }
-
-      console.error("auth-login failed:", data.error);
     } catch (err) {
       console.error("Splash fetch error:", err);
     }
 
-    // Fallback path
     setPendingUser(null);
     setAuthStep("login");
     setShowAuth(true);
   }, [pendingPhone, refreshAndPersistUser]);
 
-  // -------------------------------------------------------
-  // Welcome completed → store user → go to login screen
-  // -------------------------------------------------------
   const handleWelcomeComplete = useCallback(() => {
     if (pendingUser) persistUser(pendingUser);
     setAuthStep("login");
     setShowAuth(false);
   }, [pendingUser, persistUser]);
 
-  // -------------------------------------------------------
-  // Logout
-  // -------------------------------------------------------
   const handleLogout = useCallback(() => {
     persistUser(null);
     setAuthStep("login");
   }, [persistUser]);
 
   // -------------------------------------------------------
-  // LOADING SCREEN
+  // LOADING
   // -------------------------------------------------------
   if (loading) {
     return (
@@ -233,39 +190,21 @@ const App: React.FC = () => {
     return (
       <Router>
         <Routes>
-          <Route path="/admin-signup" element={<AdminSignupPage />} />
-          <Route
-            path="/*"
-            element={
-              <MainApp
-                user={user}
-                onLogout={handleLogout}
-                onUserUpdate={persistUser}
-              />
-            }
-          />
-          <Route
-            path="/driver-tracking/:sessionId"
-            element={<DriverTrackingPage sessionId={""} />}
-          />
-          <Route
-            path="/live-tracking/:bookingId"
-            element={<LiveTrackingView />}
-          />
+          <Route path="/*" element={<MainApp user={user} onLogout={handleLogout} onUserUpdate={persistUser} />} />
         </Routes>
       </Router>
     );
   }
 
   // -------------------------------------------------------
-  // WELCOME SCREEN (AFTER SIGNUP)
+  // WELCOME
   // -------------------------------------------------------
   if (authStep === "welcome" && pendingUser) {
     return <WelcomeScreen user={pendingUser} onComplete={handleWelcomeComplete} />;
   }
 
   // -------------------------------------------------------
-  // SPLASH SCREEN
+  // SPLASH
   // -------------------------------------------------------
   if (authStep === "splash") {
     return (
@@ -276,7 +215,7 @@ const App: React.FC = () => {
   }
 
   // -------------------------------------------------------
-  // AUTH FORMS
+  // AUTH UI
   // -------------------------------------------------------
   if (showAuth) {
     return (
@@ -324,16 +263,13 @@ const App: React.FC = () => {
   }
 
   // -------------------------------------------------------
-  // LANDING PAGE (unchanged)
+  // LANDING PAGE
   // -------------------------------------------------------
-  // ✨ *Your landing page code remains exactly the same.*
-  // (I left it untouched for clarity & to avoid merge conflicts)
-
   return (
     <Router>
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route path="/admin-signup" element={<AdminSignupPage />} />
-        <Route path="/*" element={<YourLandingPageHere />} />
       </Routes>
     </Router>
   );
