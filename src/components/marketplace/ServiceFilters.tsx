@@ -1,20 +1,17 @@
-// src/components/marketplace/ServiceFilters.tsx
-// FINAL OPTIMIZED VERSION — MATCHES PROVIDER PROFILE + EDGE FUNCTION EXACTLY
+// Location: src/components/marketplace/ServiceFilters.tsx
 
 import React from "react";
 import { ServiceFilters } from "../../types/marketplace";
-import { Filter, Star, Ruler } from "lucide-react";
 
-// 🔥 REAL categories from ProviderProfileForm (NO fictional ones)
-export const PROVIDER_CATEGORIES = [
+// Centralised categories (should match ProviderProfileForm)
+const SERVICE_CATEGORIES = [
   "Tractor Operator",
-  "Farm Equipment Rental",
-  "Drivers",
   "Mechanic",
   "Transport & Logistics",
   "Irrigation Specialist",
   "Pesticide Spraying",
   "Soil Testing & Analysis",
+  "Farm Equipment Rental",
   "Seed Supplier",
   "Fertilizer Supplier",
   "Storage & Warehousing",
@@ -23,156 +20,145 @@ export const PROVIDER_CATEGORIES = [
   "Drone Spraying Services",
   "Veterinary Services",
   "Agro Consultant",
+  "Drivers",
 ];
 
 interface Props {
   filters: ServiceFilters;
-  onFiltersChange: (filters: ServiceFilters) => void;
+  onFiltersChange: (next: ServiceFilters) => void;
 }
 
 export const ServiceFiltersComponent: React.FC<Props> = ({
   filters,
   onFiltersChange,
 }) => {
-  const update = (field: keyof ServiceFilters, value: any) => {
+  const toggleCategory = (category: string) => {
+    const exists = filters.categories.includes(category);
+    const nextCategories = exists
+      ? filters.categories.filter((c) => c !== category)
+      : [...filters.categories, category];
+
+    onFiltersChange({ ...filters, categories: nextCategories });
+  };
+
+  const handleRadiusChange = (value: string) => {
+    const n = Number(value);
+    if (Number.isNaN(n)) return;
+    onFiltersChange({ ...filters, radiusKm: n });
+  };
+
+  const handleMinRatingChange = (value: string) => {
+    const n = Number(value);
+    onFiltersChange({ ...filters, minRating: n || 0 });
+  };
+
+  const handleMinPriceChange = (value: string) => {
+    const n = Number(value);
     onFiltersChange({
       ...filters,
-      [field]: value,
+      minPrice: Number.isNaN(n) || !value ? undefined : n,
     });
   };
 
-  const clearFilters = () => {
+  const handleMaxPriceChange = (value: string) => {
+    const n = Number(value);
     onFiltersChange({
-      category: "all",
-      radiusKm: 50,
-      minRating: 0,
-      sortBy: "distance",
+      ...filters,
+      maxPrice: Number.isNaN(n) || !value ? undefined : n,
     });
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      {/* HEADER */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <Filter className="w-5 h-5 text-gray-600 mr-2" />
-          <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
-        </div>
-
-        <button
-          onClick={clearFilters}
-          className="text-sm text-green-600 hover:text-green-700 font-medium"
-        >
-          Reset
-        </button>
-      </div>
-
-      <div className="space-y-6">
-        {/* CATEGORY FILTER */}
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 mt-4">
+      {/* Top row: radius + rating + price */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Radius */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Service Category
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            Search Radius (km)
           </label>
-
-          <select
-            value={filters.category || "all"}
-            onChange={(e) => update("category", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600"
-          >
-            <option value="all">All Categories</option>
-            {PROVIDER_CATEGORIES.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center space-x-3">
+            <input
+              type="range"
+              min={5}
+              max={200}
+              step={5}
+              value={filters.radiusKm}
+              onChange={(e) => handleRadiusChange(e.target.value)}
+              className="flex-1"
+            />
+            <span className="text-sm font-medium text-gray-800 w-12 text-right">
+              {filters.radiusKm}
+            </span>
+          </div>
         </div>
 
-        {/* RADIUS FILTER */}
+        {/* Min rating */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <Ruler className="w-4 h-4 inline mr-1" />
-            Search Radius ({filters.radiusKm ?? 50} km)
-          </label>
-
-          <select
-            value={filters.radiusKm?.toString() || "50"}
-            onChange={(e) => update("radiusKm", parseInt(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600"
-          >
-            {[10, 25, 50, 100, 200].map((km) => (
-              <option key={km} value={km}>
-                Within {km} km
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* RATING FILTER */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <Star className="w-4 h-4 inline mr-1" />
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
             Minimum Rating
           </label>
-
           <select
-            value={filters.minRating?.toString() || "0"}
-            onChange={(e) => update("minRating", parseFloat(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600"
+            value={filters.minRating ?? 0}
+            onChange={(e) => handleMinRatingChange(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
           >
-            <option value="0">Any rating</option>
-            <option value="3">3★ & above</option>
-            <option value="4">4★ & above</option>
-            <option value="4.5">4.5★ & above</option>
+            <option value={0}>Any rating</option>
+            <option value={3}>3.0 ★ and above</option>
+            <option value={4}>4.0 ★ and above</option>
+            <option value={4.5}>4.5 ★ and above</option>
           </select>
         </div>
 
-        {/* SORT FILTER */}
+        {/* Price range */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Sort By
+          <label className="block text-xs font-semibold text-gray-600 mb-1">
+            Price Range (GH₵)
           </label>
-
-          <select
-            value={filters.sortBy || "distance"}
-            onChange={(e) => update("sortBy", e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600"
-          >
-            <option value="distance">Nearest</option>
-            <option value="rating">Highest Rating</option>
-            <option value="price_low">Lowest Price</option>
-            <option value="price_high">Highest Price</option>
-          </select>
-        </div>
-
-        {/* QUICK FILTERS */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">
-            Quick Filters
-          </label>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => update("category", "Tractor Operator")}
-              className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm hover:bg-green-200"
-            >
-              Tractor Operators
-            </button>
-
-            <button
-              onClick={() => update("radiusKm", 25)}
-              className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm hover:bg-blue-200"
-            >
-              Within 25 km
-            </button>
-
-            <button
-              onClick={() => update("minRating", 4.5)}
-              className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm hover:bg-purple-200"
-            >
-              4.5★ & up
-            </button>
+          <div className="flex space-x-2">
+            <input
+              type="number"
+              min={0}
+              value={filters.minPrice ?? ""}
+              onChange={(e) => handleMinPriceChange(e.target.value)}
+              placeholder="Min"
+              className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+            <input
+              type="number"
+              min={0}
+              value={filters.maxPrice ?? ""}
+              onChange={(e) => handleMaxPriceChange(e.target.value)}
+              placeholder="Max"
+              className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
           </div>
+        </div>
+      </div>
+
+      {/* Categories chips */}
+      <div className="mt-5">
+        <p className="text-xs font-semibold text-gray-600 mb-2">
+          Service Categories
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SERVICE_CATEGORIES.map((category) => {
+            const active = filters.categories.includes(category);
+            return (
+              <button
+                key={category}
+                type="button"
+                onClick={() => toggleCategory(category)}
+                className={`px-3 py-1.5 rounded-full text-xs md:text-sm border transition ${
+                  active
+                    ? "bg-green-600 text-white border-green-600 shadow-sm"
+                    : "bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100"
+                }`}
+              >
+                {category}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

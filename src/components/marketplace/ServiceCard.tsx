@@ -73,7 +73,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
   return (
     <div className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-all border border-gray-200 overflow-hidden flex flex-col">
       {/* Image / Icon */}
-      <div className="relative h-48 bg-gradient-to-br from-green-100 to-blue-100">
+      <div className="relative h-40 sm:h-48 bg-gradient-to-br from-green-100 to-blue-100">
         {service.images && service.images.length > 0 ? (
           <img
             src={service.images[0]}
@@ -111,11 +111,13 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
       </div>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col p-6">
-        <h3 className="text-lg font-semibold text-gray-900 leading-tight">
+      <div className="flex-1 flex flex-col p-4 sm:p-6">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-900 leading-tight">
           {service.title}
         </h3>
-        <p className="text-sm text-gray-500">{service.providerName}</p>
+        <p className="text-xs sm:text-sm text-gray-500">
+          {service.providerName}
+        </p>
 
         {/* Rating */}
         {rating !== null && (
@@ -147,7 +149,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           {(service.price || service.pricingInfo) && (
             <div className="flex items-start gap-2">
               <DollarSign className="w-4 h-4 mt-0.5 text-gray-400" />
-              {service.price ? (
+              {service.price != null ? (
                 <span className="font-medium text-gray-900">
                   ₵{service.price}
                   <span className="text-xs text-gray-500 ml-1">
@@ -199,7 +201,7 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
         <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-2">
           <button
             onClick={() => onViewDetails?.(service)}
-            className="w-full bg-gray-100 text-gray-700 py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center"
+            className="w-full bg-gray-100 text-gray-700 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold hover:bg-gray-200 transition-colors flex items-center justify-center"
           >
             <Eye className="w-4 h-4 mr-1" /> Details
           </button>
@@ -207,17 +209,17 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           <button
             onClick={() => onMessageProvider?.(service)}
             disabled={!onMessageProvider}
-            className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+            className="w-full bg-blue-600 text-white py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center"
           >
             <MessageSquare className="w-4 h-4 mr-1" /> Message
           </button>
 
           <button
             onClick={() => onBookService?.(service)}
-            disabled={!onBookService || service.price == null}
-            className="w-full bg-green-600 text-white py-2.5 px-3 rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center"
+            disabled={!onBookService}
+            className="w-full bg-green-600 text-white py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center"
           >
-            <Calendar className="w-4 h-4 mr-1" /> Book
+            Book
           </button>
         </div>
       </div>

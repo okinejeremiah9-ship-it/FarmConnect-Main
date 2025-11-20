@@ -1,5 +1,7 @@
 // src/lib/api.ts
 
+import { supabase } from "./supabase";
+
 const API_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 const API_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -8,7 +10,7 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
     ...options,
     headers: {
       Authorization: `Bearer ${API_KEY}`,
-      apikey: API_KEY, // ✅ important for Supabase Edge
+      apikey: API_KEY,
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
@@ -46,13 +48,7 @@ export const escrowAPI = {
     });
   },
 
-  dispute: async (
-    escrowId: string,
-    userId: string,
-    reason: string,
-    details: string,
-    audioUrl?: string | null
-  ) => {
+  dispute: async (escrowId, userId, reason, details, audioUrl) => {
     return fetchAPI("escrow-dispute", {
       method: "POST",
       body: JSON.stringify({
@@ -60,7 +56,7 @@ export const escrowAPI = {
         user_id: userId,
         reason,
         details,
-        audio_url: audioUrl,
+        audio_url: audioUrl ?? null,
       }),
     });
   },
@@ -82,12 +78,7 @@ export const disputeAPI = {
     });
   },
 
-  resolve: async (
-    disputeId: string,
-    adminId: string,
-    resolution: string,
-    action: string
-  ) => {
+  resolve: async (disputeId, adminId, resolution, action) => {
     return fetchAPI("dispute-resolve", {
       method: "POST",
       body: JSON.stringify({
@@ -100,22 +91,41 @@ export const disputeAPI = {
   },
 };
 
-/* 💬 MESSAGES API */
+/* 💬 MESSAGES API — UPDATED FOR OPTION A */
 export const messagesAPI = {
-  send: async (data: {
-    booking_id?: string;
+  /**
+   * Save a message directly into Supabase messages table.
+   */
+  send: async (msg: {
+    booking_id?: string | null;
     sender_id: string;
     receiver_id: string;
     message_type: "text" | "audio" | "image";
-    content?: string;
-    media_url?: string;
+    content?: string | null;
+    media_url?: string | null;
   }) => {
-    return fetchAPI("messages-send", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
+    const payload = {
+      booking_id: msg.booking_id ?? null,
+      sender_id: msg.sender_id,
+      receiver_id: msg.receiver_id,
+      message_type: msg.message_type,
+      content: msg.content ?? null,
+      media_url: msg.media_url ?? null,
+    };
+
+    const { data, error } = await supabase.from("messages").insert([payload]).select();
+
+    if (error) {
+      console.error("❌ Error sending message:", error);
+      throw new Error("Failed to send message");
+    }
+
+    return data;
   },
 
+  /**
+   * List messages (still using your edge function)
+   */
   list: async (bookingId: string, userId: string) => {
     return fetchAPI(`messages-list?booking_id=${bookingId}&user_id=${userId}`);
   },
@@ -130,16 +140,7 @@ export const bookingAPI = {
     });
   },
 
-  create: async (data: {
-    farmer_id: string;
-    service_id: string;
-    provider_id: string;
-    scheduled_date: string;
-    duration: number;
-    total_price: number;
-    service_location: string;
-    notes?: string;
-  }) => {
+  create: async (data) => {
     return fetchAPI("create-booking", {
       method: "POST",
       body: JSON.stringify(data),
@@ -147,23 +148,9 @@ export const bookingAPI = {
   },
 };
 
-/* 🗺️ MAP / GEOLOCATION API */
+/* 🗺️ MAP API */
 export const mapAPI = {
-  getNearbyServices: async ({
-    lat,
-    lng,
-    radius,
-    category,
-    minRating,
-    farmerId,
-  }: {
-    lat: number;
-    lng: number;
-    radius: number;
-    category?: string;
-    minRating?: number;
-    farmerId?: string;
-  }) => {
+  getNearbyServices: async ({ lat, lng, radius, category, minRating, farmerId }) => {
     const params = new URLSearchParams({
       lat: String(lat),
       lng: String(lng),
@@ -171,8 +158,7 @@ export const mapAPI = {
     });
 
     if (category) params.append("category", category);
-    if (typeof minRating === "number")
-      params.append("min_rating", minRating.toString());
+    if (typeof minRating === "number") params.append("min_rating", String(minRating));
     if (farmerId) params.append("farmer_id", farmerId);
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
@@ -185,4 +171,3 @@ export const adminAPI = {
     return fetchAPI(`admin-dashboard-stats?admin_id=${adminId}`);
   },
 };
-

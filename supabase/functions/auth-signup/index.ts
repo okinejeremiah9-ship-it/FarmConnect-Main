@@ -8,22 +8,33 @@ const corsHeaders = {
     "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// DEV MODE: Allow Admin signups without token
 const DEV_MODE_ALLOW_ADMIN_SIGNUP = true;
 
 // --------------------
-// Helper utilities
+// Convert frontend 0XXXXXXXXX → +233XXXXXXXXX
 // --------------------
 function normalizePhoneNumber(phone: string): string {
-  const digitsOnly = phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
 
-  if (digitsOnly.startsWith("0")) return "+233" + digitsOnly.substring(1);
-  if (digitsOnly.startsWith("233")) return "+" + digitsOnly;
-  if (phone.startsWith("+233")) return phone;
+  // Already 0XXXXXXXXX
+  if (digits.length === 10 && digits.startsWith("0")) {
+    return "+233" + digits.slice(1);
+  }
 
-  return "+233" + digitsOnly;
+  // +233XXXXXXXXX
+  if (phone.startsWith("+233") && digits.length === 12) {
+    return "+" + digits;
+  }
+
+  // 233XXXXXXXXX
+  if (digits.startsWith("233") && digits.length === 12) {
+    return "+" + digits;
+  }
+
+  throw new Error("Invalid Ghana phone number format (use 0XXXXXXXXX)");
 }
 
+// --------------------
 async function hashPassword(password: string): Promise<string> {
   const salt = "farmconnect_salt_2025";
   const data = new TextEncoder().encode(password + salt);
@@ -55,8 +66,6 @@ function toStringArray(value: unknown): string[] {
 }
 
 // --------------------
-// Main Handler
-// --------------------
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -66,9 +75,7 @@ Deno.serve(async (req: Request) => {
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      {
-        auth: { autoRefreshToken: false, persistSession: false },
-      }
+      { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
     const body = await req.json();
@@ -92,18 +99,13 @@ Deno.serve(async (req: Request) => {
     if (!["farmer", "provider", "admin"].includes(role))
       throw new Error("Invalid role");
 
-    // Admin token validation (only allow bypass in DEV)
-    if (role === "admin" && !DEV_MODE_ALLOW_ADMIN_SIGNUP && !admin_invite_token) {
-      throw new Error("Admin registration requires invite token");
-    }
-
-    // Normalize Ghana phone number
     const normalizedPhone = normalizePhoneNumber(phone);
-    if (!normalizedPhone.match(/^\+233\d{9}$/)) {
-      throw new Error("Invalid Ghana phone number format (+233XXXXXXXXX)");
+
+    // ✔ Correct regex
+    if (!/^\+233\d{9}$/.test(normalizedPhone)) {
+      throw new Error("Invalid Ghana phone number format");
     }
 
-    // Prevent duplicate phone registration
     const { data: existingUser } = await supabaseAdmin
       .from("users")
       .select("id, phone")
@@ -113,9 +115,6 @@ Deno.serve(async (req: Request) => {
     if (existingUser)
       throw new Error("Phone number already registered. Please log in instead.");
 
-    // --------------------
-    // Create Auth User
-    // --------------------
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         phone: normalizedPhone,
@@ -128,11 +127,7 @@ Deno.serve(async (req: Request) => {
     if (authError) throw new Error("Auth creation failed: " + authError.message);
 
     const userId = authData.user?.id;
-    if (!userId) throw new Error("Failed to retrieve auth user ID");
 
-    // --------------------
-    // Build DB Insert Data
-    // --------------------
     const insertData: Record<string, any> = {
       id: userId,
       name: name || "User",
@@ -150,14 +145,12 @@ Deno.serve(async (req: Request) => {
       created_at: new Date().toISOString(),
     };
 
-    // Farmer fields
     if (role === "farmer") {
       insertData.farm_size = roleSpecificFields.farm_size || null;
       insertData.crop_types = toStringArray(roleSpecificFields.crop_types);
       insertData.num_workers = toIntOrNull(roleSpecificFields.num_workers);
     }
 
-    // Provider fields
     if (role === "provider") {
       insertData.business_name = roleSpecificFields.business_name || null;
       insertData.contact_person =
@@ -173,21 +166,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // --------------------
-    // Insert User Record
-    // --------------------
     const { data: user, error: userError } = await supabaseAdmin
       .from("users")
       .insert(insertData)
       .select("id, name, phone, role, created_at")
       .single();
 
-    if (userError) {
-      console.error("❌ DB Insert Error:", userError);
-      throw new Error("Database insert failed: " + userError.message);
-    }
-
-    if (!user) throw new Error("No user returned after insert");
+    if (userError) throw new Error(userError.message);
 
     return new Response(
       JSON.stringify({
@@ -196,11 +181,8 @@ Deno.serve(async (req: Request) => {
         user,
       }),
       {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
         status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   } catch (error) {
@@ -211,13 +193,7 @@ Deno.serve(async (req: Request) => {
         success: false,
         error: (error as Error).message,
       }),
-      {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json",
-        },
-        status: 400,
-      }
+      { status: 400, headers: corsHeaders }
     );
   }
 });

@@ -18,7 +18,14 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { booking_id, sender_id, receiver_id, message_type, content, media_url } = await req.json();
+const body = await req.json();
+
+const booking_id = body.booking_id ?? null;
+const sender_id = body.sender_id;
+const receiver_id = body.receiver_id;
+const message_type = body.message_type;
+const content = body.content ?? null;
+const media_url = body.media_url ?? null;
 
     if (!sender_id || !receiver_id || !message_type) {
       throw new Error('Missing required fields');

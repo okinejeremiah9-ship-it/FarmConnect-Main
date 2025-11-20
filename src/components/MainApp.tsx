@@ -1,23 +1,27 @@
-// Location: src/components/MainApp.tsx
-// Purpose: Core navigation container that controls app routing and GPS tracking view transitions.
-
+// src/components/MainApp.tsx
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 
+import PageTransition from "./ui/PageTransition";
+
+// Navigation & Layout
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
 
+// Dashboards
 import { FarmerDashboard } from "./dashboards/FarmerDashboard";
 import { ProviderDashboard } from "./dashboards/ProviderDashboard";
 import { AdminDashboard } from "./dashboards/AdminDashboard";
 import { AdminInviteGenerator } from "./admin/AdminInviteGenerator";
 
+// Profile
 import { ProfilePage } from "./profile/ProfilePage";
 import { FarmerProfileForm } from "./profile/FarmerProfileForm";
 import { ProviderProfileForm } from "./profile/ProviderProfileForm";
 import { UserProfile } from "./profile/UserProfile";
 
+// Core Features
 import { ServiceMap } from "./map/ServiceMap";
 import { ServiceMarketplace } from "./marketplace/ServiceMarketplace";
 import { UserReviews } from "./reviews/UserReviews";
@@ -32,10 +36,12 @@ import { DisputesPage } from "./disputes/DisputesPage";
 import DriverTrackingPage from "./tracking/DriverTrackingPage";
 import LiveTrackingView from "./tracking/LiveTrackingView";
 
+import ChatScreen from "./chat/ChatScreen";
+
 interface MainAppProps {
   user: any;
   onLogout: () => void;
-  onUserUpdate: (updatedUser: any) => Promise<void> | void;
+  onUserUpdate: (updatedUser: any) => void;
 }
 
 export const MainApp: React.FC<MainAppProps> = ({
@@ -43,115 +49,41 @@ export const MainApp: React.FC<MainAppProps> = ({
   onLogout,
   onUserUpdate,
 }) => {
-  const [currentView, setCurrentView] = useState<string>("dashboard");
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
-  const [navigationHistory, setNavigationHistory] = useState<string[]>(["dashboard"]);
+  const [currentView, setCurrentView] = useState("dashboard");
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    null
+  );
+  const [navigationHistory, setNavigationHistory] = useState<string[]>([
+    "dashboard",
+  ]);
+
   const [showProfileSetup, setShowProfileSetup] = useState(false);
-  const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
+  const [trackingSessionId, setTrackingSessionId] = useState<string | null>(
+    null
+  );
 
-  // -----------------------------------------------------------
-  // Profile Completion Check
-  // -----------------------------------------------------------
+  // ----------------------------
+  // Profile check
+  // ----------------------------
   useEffect(() => {
-    const checkProfileStatus = async () => {
-      if (!user || user.role === "admin") return;
+    if (!user || user.role === "admin") return;
 
-      try {
-        const { data, error } = await supabase
-          .from("users")
-          .select("profile_completed")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        const completed = data?.profile_completed ?? false;
-        setShowProfileSetup(!completed);
-      } catch (error) {
-        console.error("Profile completion check failed:", error);
-      }
-    };
-
-    checkProfileStatus();
+    supabase
+      .from("users")
+      .select("profile_completed")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setShowProfileSetup(!(data?.profile_completed ?? false));
+      });
   }, [user]);
 
-  // -----------------------------------------------------------
-  // Restore Tracking Sessions After Refresh
-  // -----------------------------------------------------------
-  useEffect(() => {
-    const sessionId = sessionStorage.getItem("pending_tracking_session");
-    const type = sessionStorage.getItem("pending_tracking_type");
-
-    if (sessionId && type) {
-      if (type === "driver") navigateTo("driver-tracking", undefined, sessionId);
-      else navigateTo("live-tracking", undefined, sessionId);
-
-      setTimeout(() => {
-        sessionStorage.removeItem("pending_tracking_session");
-        sessionStorage.removeItem("pending_tracking_type");
-      }, 1000);
-    }
-  }, []);
-
-  // -----------------------------------------------------------
-  // Profile Update Handler
-  // -----------------------------------------------------------
-  const handleProfileUpdate = async (data: any) => {
-    try {
-      const targetUserId = user?.id ?? user?.user_id;
-      if (!targetUserId) throw new Error("Missing user ID. Please sign in again.");
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ...data, user_id: targetUserId }),
-        }
-      );
-
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to update profile");
-      }
-
-      // Refresh the full profile
-      const profileResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-        }
-      );
-
-      const profileResult = await profileResponse.json();
-      if (!profileResponse.ok || !profileResult.success) {
-        throw new Error(profileResult.error || "Failed to refresh profile");
-      }
-
-      const merged = normalizeUserProfile({ ...user, ...profileResult.user });
-
-      onUserUpdate(merged);
-      setShowProfileSetup(false);
-
-      return result.user;
-    } catch (error) {
-      console.error("Profile update error:", error);
-      throw error instanceof Error ? error : new Error("Failed to update profile");
-    }
-  };
-
-  // -----------------------------------------------------------
+  // ----------------------------
   // Navigation
-  // -----------------------------------------------------------
+  // ----------------------------
   const navigateTo = (view: string, providerId?: string, sessionId?: string) => {
-    setNavigationHistory((prev) => [...prev, currentView]);
+    setNavigationHistory((p) => [...p, currentView]);
     setCurrentView(view);
-
     if (providerId) setSelectedProviderId(providerId);
     if (sessionId) setTrackingSessionId(sessionId);
   };
@@ -166,137 +98,204 @@ export const MainApp: React.FC<MainAppProps> = ({
     }
   };
 
-  // -----------------------------------------------------------
-  // Render Content by View
-  // -----------------------------------------------------------
+  // ----------------------------
+  // Profile Update
+  // ----------------------------
+  const handleProfileUpdate = async (data: any) => {
+    try {
+      const targetUserId = user.id;
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ...data, user_id: targetUserId }),
+        }
+      );
+
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error);
+
+      const profileResponse = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+        }
+      );
+      const profileData = await profileResponse.json();
+
+      const merged = normalizeUserProfile({
+        ...user,
+        ...profileData.user,
+      });
+
+      onUserUpdate(merged);
+      setShowProfileSetup(false);
+    } catch (e) {
+      console.error("Profile update error:", e);
+    }
+  };
+
+  // ----------------------------
+  // Render Views
+  // ----------------------------
   const renderContent = () => {
     switch (currentView) {
       case "dashboard":
-        if (user.role === "farmer") return <FarmerDashboard onNavigate={navigateTo} />;
-        if (user.role === "provider") return <ProviderDashboard onNavigate={navigateTo} />;
-        if (user.role === "admin")
-          return (
-            <>
-              <AdminDashboard />
-              <AdminInviteGenerator />
-            </>
-          );
-        return <FarmerDashboard onNavigate={navigateTo} />;
+        if (user.role === "farmer")
+          return <FarmerDashboard onNavigate={navigateTo} />;
+        if (user.role === "provider")
+          return <ProviderDashboard onNavigate={navigateTo} />;
+        return (
+          <>
+            <AdminDashboard />
+            <AdminInviteGenerator />
+          </>
+        );
 
       case "profile":
         return (
-          <ProfilePage
-            user={user}
-            onBack={navigateBack}
-            onProfileUpdate={handleProfileUpdate}
-          />
+          <PageTransition>
+            <ProfilePage
+              user={user}
+              onBack={navigateBack}
+              onProfileUpdate={handleProfileUpdate}
+            />
+          </PageTransition>
         );
 
       case "map":
         return (
-          <>
+          <PageTransition>
             <PageHeader
               title="Service Map"
-              subtitle="Find nearby service providers"
+              subtitle="Find reliable providers around you"
               onBack={navigateBack}
             />
             <ServiceMap
-              onProviderSelect={(p) =>
-                navigateTo("provider-profile", p.id)
+              onProviderSelect={(provider) =>
+                navigateTo("provider-profile", provider.id)
               }
             />
-          </>
+          </PageTransition>
         );
 
       case "marketplace":
         return (
-          <>
+          <PageTransition>
             <PageHeader
-              title="Service Marketplace"
-              subtitle="Browse and book agricultural services"
+              title="Marketplace"
+              subtitle="Browse agricultural services"
               onBack={navigateBack}
             />
-            <ServiceMarketplace onNavigate={navigateTo} /> {/* newer version kept */}
-          </>
+            <ServiceMarketplace onNavigate={navigateTo} />
+          </PageTransition>
         );
 
       case "provider-profile":
         return (
-          <>
+          <PageTransition>
             <PageHeader
               title="Provider Profile"
-              subtitle="Reviews & Service Info"
+              subtitle="Service details and reviews"
               onBack={navigateBack}
             />
-            <UserProfile
-              userId={selectedProviderId || ""}
-              isOwnProfile={false}
+            <UserProfile userId={selectedProviderId!} isOwnProfile={false} />
+          </PageTransition>
+        );
+
+      case "chat":
+        return (
+          <PageTransition>
+            <ChatScreen
+              userId={user.id}
+              otherUserId={selectedProviderId!}
+              onBack={navigateBack}
             />
-          </>
+          </PageTransition>
         );
 
       case "bookings":
-      case "requests":
         return (
-          <BookingsPage
-            userId={user.id}
-            userRole={user.role}
-            onNavigate={navigateTo}
-          />
+          <PageTransition>
+            <BookingsPage
+              userId={user.id}
+              userRole={user.role}
+              onNavigate={navigateTo}
+            />
+          </PageTransition>
         );
 
       case "wallet":
         return (
-          <>
-            <PageHeader title="My Wallet" subtitle="Manage payments" onBack={navigateBack} />
+          <PageTransition>
+            <PageHeader title="Wallet" subtitle="Manage escrow & payments" />
             <WalletPage userId={user.id} />
-          </>
+          </PageTransition>
         );
 
       case "reviews":
         return (
-          <>
-            <PageHeader title="My Reviews" subtitle="Feedback from other users" onBack={navigateBack} />
+          <PageTransition>
+            <PageHeader title="Reviews" subtitle="See what others say" />
             <UserReviews userId={user.id} />
-          </>
+          </PageTransition>
         );
 
       case "how-it-works":
-        return <HowItWorks onBack={navigateBack} />;
+        return (
+          <PageTransition>
+            <HowItWorks onBack={navigateBack} />
+          </PageTransition>
+        );
 
       case "disputes":
-        if (user.role === "admin") {
-          return (
-            <>
-              <PageHeader title="Dispute Cases" subtitle="Manage reported issues" onBack={navigateBack} />
-              <AdminDisputesPage adminId={user.id} />
-            </>
-          );
-        }
         return (
-          <DisputesPage
-            userId={user.id}
-            userRole={user.role}
-            onBack={navigateBack}
-          />
+          <PageTransition>
+            {user.role === "admin" ? (
+              <>
+                <PageHeader title="Disputes" />
+                <AdminDisputesPage adminId={user.id} />
+              </>
+            ) : (
+              <DisputesPage
+                userId={user.id}
+                userRole={user.role}
+                onBack={navigateBack}
+              />
+            )}
+          </PageTransition>
         );
 
       case "driver-tracking":
-        return <DriverTrackingPage sessionId={trackingSessionId || ""} onComplete={navigateBack} />;
+        return (
+          <PageTransition>
+            <DriverTrackingPage
+              sessionId={trackingSessionId!}
+              onComplete={navigateBack}
+            />
+          </PageTransition>
+        );
 
       case "live-tracking":
         return (
-          <>
+          <PageTransition>
             <PageHeader
               title="Live Tracking"
-              subtitle="Real-time driver movement"
+              subtitle="Real-time movement"
               onBack={navigateBack}
             />
             <LiveTrackingView
-              sessionId={trackingSessionId || ""}
+              sessionId={trackingSessionId!}
               onBack={navigateBack}
             />
-          </>
+          </PageTransition>
         );
 
       default:
@@ -304,31 +303,44 @@ export const MainApp: React.FC<MainAppProps> = ({
     }
   };
 
-  // -----------------------------------------------------------
-  // First-Time Profile Setup
-  // -----------------------------------------------------------
+  // ----------------------------
+  // First-time setup form
+  // ----------------------------
   if (showProfileSetup) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-4xl w-full">
-          {user.role === "farmer" ? (
-            <FarmerProfileForm user={user} onSave={handleProfileUpdate} isFirstTime />
-          ) : (
-            <ProviderProfileForm user={user} onSave={handleProfileUpdate} isFirstTime />
-          )}
+      <PageTransition>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <div className="max-w-4xl w-full">
+            {user.role === "farmer" ? (
+              <FarmerProfileForm
+                user={user}
+                onSave={handleProfileUpdate}
+                isFirstTime
+              />
+            ) : (
+              <ProviderProfileForm
+                user={user}
+                onSave={handleProfileUpdate}
+                isFirstTime
+              />
+            )}
+          </div>
         </div>
-      </div>
+      </PageTransition>
     );
   }
 
-  // -----------------------------------------------------------
-  // Main App Container
-  // -----------------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <Navigation user={user} onLogout={onLogout} onNavigate={navigateTo} />
-      {renderContent()}
-      <BottomNav currentView={currentView} onNavigate={navigateTo} role={user.role} />
+
+      <PageTransition keyId={currentView}>{renderContent()}</PageTransition>
+
+      <BottomNav
+        currentView={currentView}
+        onNavigate={navigateTo}
+        role={user.role}
+      />
     </div>
   );
 };

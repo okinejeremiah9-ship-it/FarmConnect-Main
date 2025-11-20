@@ -4,7 +4,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 // -------------------------------------------
-// ✅ Initialize Supabase Client (from remote)
+// ✅ Initialize Supabase Client
 // -------------------------------------------
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -25,16 +25,21 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 // -------------------------------------------
-// ✅ Storage Buckets (KEEP HEAD VERSION)
+// ✅ STORAGE BUCKETS (Expanded + Unified)
 // -------------------------------------------
+// For ChatWindow compatibility
 export const STORAGE_BUCKETS = {
+  CHAT_IMAGES: "chat_uploads",
+  CHAT_AUDIO: "audio_messages",
+
+  // Keep your existing buckets untouched
   AUDIO: "audio-messages",
   IMAGES: "message-images",
   PROFILES: "profile-pictures",
 };
 
 // -------------------------------------------
-// ✅ File Upload (KEEP HEAD VERSION)
+// ✅ File Upload (Supports all buckets)
 // -------------------------------------------
 export async function uploadFile(
   bucket: string,
@@ -49,7 +54,7 @@ export async function uploadFile(
     });
 
   if (error) {
-    console.error("File upload failed:", error.message);
+    console.error("❌ File upload failed:", error.message);
     throw new Error(`Upload failed: ${error.message}`);
   }
 
@@ -61,18 +66,18 @@ export async function uploadFile(
 }
 
 // -------------------------------------------
-// ✅ Delete File (KEEP HEAD VERSION)
+// ✅ Delete File
 // -------------------------------------------
 export async function deleteFile(bucket: string, path: string): Promise<void> {
   const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) {
-    console.error("File deletion failed:", error.message);
+    console.error("❌ File deletion failed:", error.message);
     throw new Error(`Delete failed: ${error.message}`);
   }
 }
 
 // -------------------------------------------
-// ✅ Fetch Provider Services (KEEP HEAD VERSION)
+// ✅ Fetch Provider Services
 // -------------------------------------------
 export async function fetchProviderServices() {
   const { data, error } = await supabase
@@ -115,7 +120,7 @@ export async function fetchProviderServices() {
 }
 
 // -------------------------------------------
-// 🚚 DRIVER GPS TRACKING (KEEP HEAD VERSION)
+// 🚚 DRIVER GPS TRACKING
 // -------------------------------------------
 export async function saveDriverLocation(locationData: {
   session_id: string;
@@ -156,13 +161,13 @@ export function subscribeToDriverLocation(
 }
 
 // -------------------------------------------
-// 💬 CHAT SYSTEM (KEEP HEAD VERSION)
+// 💬 CHAT SYSTEM
 // -------------------------------------------
 export async function getOrCreateChatSession(
   farmerId: string,
   providerId: string
 ) {
-  const { data: existing, error: fetchError } = await supabase
+  const { data: existing } = await supabase
     .from("chat_sessions")
     .select("*")
     .eq("farmer_id", farmerId)
@@ -171,13 +176,14 @@ export async function getOrCreateChatSession(
 
   if (existing) return existing;
 
-  const { data: newSession, error: insertError } = await supabase
+  const { data: newSession, error } = await supabase
     .from("chat_sessions")
     .insert([{ farmer_id: farmerId, provider_id: providerId }])
     .select()
     .single();
 
-  if (insertError) throw insertError;
+  if (error) throw error;
+
   return newSession;
 }
 
@@ -246,7 +252,7 @@ export function subscribeToMessages(
 }
 
 // -------------------------------------------
-// 📅 BOOKINGS (KEEP HEAD VERSION)
+// 📅 BOOKINGS
 // -------------------------------------------
 export async function createBooking(bookingData: any) {
   const { data, error } = await supabase
