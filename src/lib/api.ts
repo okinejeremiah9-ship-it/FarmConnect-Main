@@ -91,7 +91,7 @@ export const disputeAPI = {
   },
 };
 
-/* 💬 MESSAGES API — UPDATED FOR OPTION A */
+/* 💬 MESSAGES API — UPDATED FOR OPTION A + CONVERSATIONS */
 export const messagesAPI = {
   /**
    * Save a message directly into Supabase messages table.
@@ -113,7 +113,10 @@ export const messagesAPI = {
       media_url: msg.media_url ?? null,
     };
 
-    const { data, error } = await supabase.from("messages").insert([payload]).select();
+    const { data, error } = await supabase
+      .from("messages")
+      .insert([payload])
+      .select();
 
     if (error) {
       console.error("❌ Error sending message:", error);
@@ -124,7 +127,86 @@ export const messagesAPI = {
   },
 
   /**
-   * List messages (still using your edge function)
+   * 📥 Get conversations grouped by OTHER USER
+   * (one row per farmer/provider pair, using latest message)
+   */
+  listConversations: async (userId: string) => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select(`
+        id,
+        sender_id,
+        receiver_id,
+        message_type,
+        content,
+        is_read,
+        created_at,
+        sender:sender_id (
+          id,
+          name,
+          role,
+          business_name
+        ),
+        receiver:receiver_id (
+          id,
+          name,
+          role,
+          business_name
+        )
+      `)
+      .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("❌ Error loading conversations:", error);
+      throw new Error("Failed to load conversations");
+    }
+
+    type RawMessage = any;
+    const map = new Map<string, any>();
+
+    (data || []).forEach((msg: RawMessage) => {
+      const isSender = msg.sender_id === userId;
+      const otherUser = isSender ? msg.receiver : msg.sender;
+      const otherUserId = otherUser?.id;
+      if (!otherUserId) return;
+
+      const key = otherUserId as string;
+
+      const preview =
+        msg.message_type === "text"
+          ? msg.content || ""
+          : msg.message_type === "image"
+          ? "📷 Image"
+          : "🎙️ Audio";
+
+      const isUnreadForUser = !isSender && msg.is_read === false;
+
+      // because we sorted DESC, first time we see a user = latest message
+      if (!map.has(key)) {
+        map.set(key, {
+          otherUserId,
+          otherUserName:
+            otherUser.business_name ||
+            otherUser.name ||
+            "User",
+          lastMessage: preview,
+          lastMessageType: msg.message_type,
+          lastMessageAt: msg.created_at,
+          lastSenderIsSelf: isSender,
+          unreadCount: isUnreadForUser ? 1 : 0,
+        });
+      } else if (isUnreadForUser) {
+        const existing = map.get(key);
+        existing.unreadCount += 1;
+      }
+    });
+
+    return Array.from(map.values());
+  },
+
+  /**
+   * 🔁 (keep existing) List messages via edge function if you still use it
    */
   list: async (bookingId: string, userId: string) => {
     return fetchAPI(`messages-list?booking_id=${bookingId}&user_id=${userId}`);

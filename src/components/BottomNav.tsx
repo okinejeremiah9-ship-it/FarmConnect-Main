@@ -1,5 +1,18 @@
-import React, { useState } from 'react';
-import { Home, Map, User, FileText, Wallet, Menu, X, Shield, Star, MessageCircle, HelpCircle } from 'lucide-react';
+// Updated BottomNav.tsx with Messages button
+import React, { useState } from "react";
+import {
+  Home,
+  Map,
+  User,
+  FileText,
+  Wallet,
+  Menu,
+  X,
+  Shield,
+  Star,
+  MessageSquare,
+  HelpCircle,
+} from "lucide-react";
 
 interface BottomNavProps {
   currentView: string;
@@ -7,24 +20,29 @@ interface BottomNavProps {
   role?: string;
 }
 
-export const BottomNav: React.FC<BottomNavProps> = ({ currentView, onNavigate, role }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({
+  currentView,
+  onNavigate,
+  role,
+}) => {
   const [showMenu, setShowMenu] = useState(false);
 
   const mainNavItems = [
-    { id: 'dashboard', label: 'Home', icon: Home },
+    { id: "dashboard", label: "Home", icon: Home },
+    { id: "messages", label: "Messages", icon: MessageSquare }, // ✅ Messages main tab
   ];
 
   const menuItems = [
-    { id: 'map', label: 'Service Map', icon: Map, roles: ['farmer', 'provider', 'admin'] },
-    { id: 'requests', label: 'My Bookings', icon: FileText, roles: ['farmer', 'provider'] },
-    { id: 'wallet', label: 'My Wallet', icon: Wallet, roles: ['farmer', 'provider', 'admin'] },
-    { id: 'reviews', label: 'My Reviews', icon: Star, roles: ['farmer', 'provider'] },
-    { id: 'disputes', label: 'Disputes', icon: Shield, roles: ['admin'] },
-    { id: 'marketplace', label: 'Browse Services', icon: MessageCircle, roles: ['farmer'] },
+    { id: "map", label: "Service Map", icon: Map, roles: ["farmer", "provider", "admin"] },
+    { id: "bookings", label: "My Bookings", icon: FileText, roles: ["farmer", "provider"] }, // ✅ match MainApp "bookings"
+    { id: "wallet", label: "My Wallet", icon: Wallet, roles: ["farmer", "provider", "admin"] },
+    { id: "reviews", label: "My Reviews", icon: Star, roles: ["farmer", "provider"] },
+    { id: "disputes", label: "Disputes", icon: Shield, roles: ["admin"] },
+    { id: "marketplace", label: "Browse Services", icon: MessageSquare, roles: ["farmer"] },
   ];
 
-  const filteredMenuItems = menuItems.filter(item =>
-    !item.roles || !role || item.roles.includes(role)
+  const filteredMenuItems = menuItems.filter(
+    (item) => !item.roles || !role || item.roles.includes(role)
   );
 
   const handleMenuItemClick = (viewId: string) => {
@@ -65,8 +83,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentView, onNavigate, r
                     onClick={() => handleMenuItemClick(item.id)}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
                       isActive
-                        ? 'bg-green-100 text-green-700'
-                        : 'hover:bg-gray-100 text-gray-700'
+                        ? "bg-green-100 text-green-700"
+                        : "hover:bg-gray-100 text-gray-700"
                     }`}
                   >
                     <Icon className="h-5 w-5" />
@@ -93,12 +111,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentView, onNavigate, r
                   onClick={() => onNavigate(item.id)}
                   className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
                     isActive
-                      ? 'text-green-600'
-                      : 'text-gray-500 hover:text-gray-700'
+                      ? "text-green-600"
+                      : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
-                  <Icon className={`w-6 h-6 ${isActive ? 'stroke-2' : ''}`} />
-                  <span className={`text-xs mt-1 ${isActive ? 'font-semibold' : ''}`}>
+                  <Icon className={`w-6 h-6 ${isActive ? "stroke-2" : ""}`} />
+                  <span
+                    className={`text-xs mt-1 ${
+                      isActive ? "font-semibold" : ""
+                    }`}
+                  >
                     {item.label}
                   </span>
                 </button>
@@ -109,13 +131,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentView, onNavigate, r
             <button
               onClick={() => setShowMenu(!showMenu)}
               className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
-                showMenu
-                  ? 'text-green-600'
-                  : 'text-gray-500 hover:text-gray-700'
+                showMenu ? "text-green-600" : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              <Menu className={`w-6 h-6 ${showMenu ? 'stroke-2' : ''}`} />
-              <span className={`text-xs mt-1 ${showMenu ? 'font-semibold' : ''}`}>
+              <Menu className={`w-6 h-6 ${showMenu ? "stroke-2" : ""}`} />
+              <span
+                className={`text-xs mt-1 ${
+                  showMenu ? "font-semibold" : ""
+                }`}
+              >
                 Menu
               </span>
             </button>

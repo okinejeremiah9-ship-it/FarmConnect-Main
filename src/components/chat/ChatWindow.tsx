@@ -2,17 +2,14 @@ import React, { useState, useRef, useEffect } from "react";
 import { Send, Mic, MicOff, Image as ImageIcon, Play, Pause } from "lucide-react";
 
 import { messagesAPI } from "../../lib/api";
-
-// ✅ Correct Supabase imports
-import { uploadFile, STORAGE_BUCKETS, supabase } from "../../lib/supabase";
-
+import { uploadFile, STORAGE_BUCKETS } from "../../lib/supabase";
 import { useRealtimeMessages } from "../../hooks/useRealtimeSubscription";
 
 interface ChatWindowProps {
-  bookingId?: string;
+  bookingId?: string | null;
   userId: string;
   otherUserId: string;
-  otherUserName: string;
+  otherUserName?: string; // 👈 made optional
 }
 
 interface Message {
@@ -27,7 +24,7 @@ interface Message {
 }
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
-  bookingId,
+  bookingId = null,
   userId,
   otherUserId,
   otherUserName,
@@ -88,7 +85,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
   // ------------------------------------------------------------------
-  // 🔔 PUSH NOTIFICATION TRIGGER
+  // 🔔 PUSH NOTIFICATION TRIGGER (non-blocking)
   // ------------------------------------------------------------------
   const triggerPushNotification = async (
     kind: "text" | "audio" | "image",
@@ -143,6 +140,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setMessageText("");
       await triggerPushNotification("text", trimmed);
     } catch (error) {
+      console.error(error);
       alert("Failed to send message");
     } finally {
       setSending(false);
@@ -179,6 +177,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setAudioBlob(null);
       await triggerPushNotification("audio", "");
     } catch (error) {
+      console.error(error);
       alert("Failed to send audio message");
     } finally {
       setSending(false);
@@ -195,7 +194,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     try {
       setSending(true);
 
-      const filePath = `${bookingId ?? "direct"}/${userId}/${Date.now()}-${file.name}`;
+      const filePath = `${bookingId ?? "direct"}/${userId}/${Date.now()}-${
+        file.name
+      }`;
 
       const imageUrl = await uploadFile(
         STORAGE_BUCKETS.CHAT_IMAGES,
@@ -214,6 +215,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
       await triggerPushNotification("image", "");
     } catch (err) {
+      console.error(err);
       alert("Failed to send image");
     } finally {
       setSending(false);
@@ -229,7 +231,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       {/* Header */}
       <div className="bg-green-600 text-white px-6 py-4 rounded-t-xl">
         <h3 className="font-semibold text-sm sm:text-base">
-          Chat with {otherUserName}
+          {otherUserName
+            ? `Chat with ${otherUserName}`
+            : "Conversation"}{/* 👈 fallback */}
         </h3>
       </div>
 
@@ -381,9 +385,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   );
 };
 
-// ----------------------------------------------------------
-// 🔊 AUDIO PLAYER COMPONENT
-// ----------------------------------------------------------
 const AudioPlayer: React.FC<{ src: string; isSender: boolean }> = ({
   src,
   isSender,

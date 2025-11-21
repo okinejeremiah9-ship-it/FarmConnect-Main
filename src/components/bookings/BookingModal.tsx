@@ -3,7 +3,6 @@ import { ServiceListing } from "../../types/marketplace";
 import { useAuth } from "../../contexts/AuthContext";
 import { X, Calendar, Clock, MapPin, DollarSign } from "lucide-react";
 import { EscrowPaymentButton } from "../escrow/EscrowPaymentButton";
-import { createBooking } from "../../lib/supabase"; // new helper
 
 interface BookingModalProps {
   service: ServiceListing;
@@ -41,6 +40,20 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       [field]: value,
     }));
   };
+  // Booking modal state
+const [activeBookingService, setActiveBookingService] = useState<ServiceListing | null>(null);
+const [isBookingOpen, setIsBookingOpen] = useState(false);
+
+const openBookingModal = (service: ServiceListing) => {
+  setActiveBookingService(service);
+  setIsBookingOpen(true);
+};
+
+const closeBookingModal = () => {
+  setIsBookingOpen(false);
+  setActiveBookingService(null);
+};
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,27 +67,46 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       }
 
       if (step === 1) {
-        const bookingRecord = {
+        // -----------------------------
+        // STEP 1: Create booking in DB via Edge Function
+        // -----------------------------
+        const scheduledDateTime = `${bookingData.date}T${bookingData.startTime}:00Z`;
+
+        const payload = {
           farmer_id: user.id,
-          farmer_name: user.user_metadata?.full_name || "Farmer",
           service_id: service.id,
-          service_title: service.title,
           provider_id: service.providerId,
-          provider_name: service.providerName,
-          status: "pending",
-          scheduled_date: `${bookingData.date}T${bookingData.startTime}:00Z`,
+          scheduled_date: scheduledDateTime,
           duration: bookingData.duration,
           total_price: totalPrice,
-          location: bookingData.location,
-          notes: bookingData.notes,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          service_location: bookingData.location, // ✅ matches DB + edge fn
+          notes: bookingData.notes || null,
         };
 
-        const data = await createBooking(bookingRecord);
-        setBookingId(data.id);
-        setStep(2);
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-booking`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          console.error("Create booking error:", result);
+          throw new Error(result.error || "Failed to create booking");
+        }
+
+        const createdBooking = result.booking;
+        setBookingId(createdBooking.id);
+        setStep(2); // move to payment
       } else {
+        // STEP 2 fallback (normally handled after payment)
         onBookingComplete();
       }
     } catch (error) {
@@ -148,9 +180,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <input
                   type="date"
                   value={bookingData.date}
-                  onChange={(e) =>
-                    handleInputChange("date", e.target.value)
-                  }
+                  onChange={(e) => handleInputChange("date", e.target.value)}
                   min={new Date().toISOString().split("T")[0]}
                   required
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
@@ -183,10 +213,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <select
                     value={bookingData.duration}
                     onChange={(e) =>
-                      handleInputChange(
-                        "duration",
-                        parseInt(e.target.value)
-                      )
+                      handleInputChange("duration", parseInt(e.target.value))
                     }
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
@@ -252,8 +279,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               ) : (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                   <p className="text-sm text-yellow-800">
-                    This provider has not listed a specific price.  
-                    You may need to confirm pricing before booking.
+                    This provider has not listed a specific price. You may need
+                    to confirm pricing before booking.
                   </p>
                 </div>
               )}

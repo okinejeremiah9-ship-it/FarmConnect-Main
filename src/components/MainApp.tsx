@@ -1,4 +1,6 @@
 // src/components/MainApp.tsx
+import MessagesPage from "./chat/MessagesPage";
+
 import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -195,6 +197,21 @@ export const MainApp: React.FC<MainAppProps> = ({
               onBack={navigateBack}
             />
             <ServiceMarketplace onNavigate={navigateTo} />
+          </PageTransition>
+        );
+
+      case "messages":
+        return (
+          <PageTransition>
+            <MessagesPage
+              userId={user.id}
+              onBack={navigateBack}
+              onOpenChat={(otherUserId) => {
+                // Reuse selectedProviderId as "other user id" for chat
+                setSelectedProviderId(otherUserId);
+                navigateTo("chat");
+              }}
+            />
           </PageTransition>
         );
 

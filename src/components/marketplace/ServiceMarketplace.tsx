@@ -8,6 +8,7 @@ import { useGeolocationCapture } from "../../hooks/useGeolocationCapture";
 import { supabase } from "../../lib/supabase";
 import { useUserSession } from "../../contexts/UserSessionContext";
 import { ChatWindow } from "../chat/ChatWindow";
+import { BookingModal } from "../bookings/BookingModal";
 
 import { MapPin, AlertTriangle, Crosshair, Search, X } from "lucide-react";
 
@@ -82,6 +83,11 @@ export const ServiceMarketplace: React.FC = () => {
   const [activeChatService, setActiveChatService] =
     useState<ServiceListing | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Booking state
+  const [activeBookingService, setActiveBookingService] =
+    useState<ServiceListing | null>(null);
+  const [isBookingOpen, setIsBookingOpen] = useState(false);
 
   // Geolocation hook
   const {
@@ -386,6 +392,30 @@ export const ServiceMarketplace: React.FC = () => {
   };
 
   // -----------------------------
+  // Booking handlers
+  // -----------------------------
+
+  const openBookingModal = (service: ServiceListing) => {
+    if (!sessionUser) {
+      alert("You must be logged in to book a service.");
+      return;
+    }
+
+    if (sessionUser.role !== "farmer") {
+      alert("Only farmers can book services.");
+      return;
+    }
+
+    setActiveBookingService(service);
+    setIsBookingOpen(true);
+  };
+
+  const closeBookingModal = () => {
+    setIsBookingOpen(false);
+    setActiveBookingService(null);
+  };
+
+  // -----------------------------
   // Render
   // -----------------------------
 
@@ -443,7 +473,10 @@ export const ServiceMarketplace: React.FC = () => {
         )}
 
         {/* Filters */}
-        <ServiceFiltersComponent filters={filters} onFiltersChange={setFilters} />
+        <ServiceFiltersComponent
+          filters={filters}
+          onFiltersChange={setFilters}
+        />
 
         {/* Search bar */}
         <div className="mt-4">
@@ -477,6 +510,7 @@ export const ServiceMarketplace: React.FC = () => {
                   key={service.id}
                   service={service}
                   onMessageProvider={handleMessageProvider}
+                  onBookService={openBookingModal}
                 />
               ))}
             </div>
@@ -512,6 +546,18 @@ export const ServiceMarketplace: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Booking Modal */}
+      {isBookingOpen && activeBookingService && (
+        <BookingModal
+          service={activeBookingService}
+          onClose={closeBookingModal}
+          onBookingComplete={() => {
+            closeBookingModal();
+            alert("Booking created successfully!");
+          }}
+        />
       )}
     </div>
   );
