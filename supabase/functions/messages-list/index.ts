@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -27,7 +27,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Get messages for booking where user is sender or receiver
-    const { data: messages, error: messagesError } = await supabaseClient
+    const { data: messages, error: messagesError } = await supabase
       .from('messages')
       .select('*, sender:sender_id(id, name, profile_pic), receiver:receiver_id(id, name, profile_pic)')
       .eq('booking_id', booking_id)

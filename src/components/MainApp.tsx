@@ -1,23 +1,20 @@
 // src/components/MainApp.tsx
-import MessagesPage from "./chat/MessagesPage";
 
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabaseClient";
-
+import { supabase } from "../lib/supabase";
 import PageTransition from "./ui/PageTransition";
 
-// Navigation & Layout
+// Navigation
 import { Navigation } from "./Navigation";
 import { BottomNav } from "./BottomNav";
 import { PageHeader } from "./PageHeader";
 
-// Dashboards
-import { FarmerDashboard } from "./dashboards/FarmerDashboard";
-import { ProviderDashboard } from "./dashboards/ProviderDashboard";
-import { AdminDashboard } from "./dashboards/AdminDashboard";
-import { AdminInviteGenerator } from "./admin/AdminInviteGenerator";
+// WRAPPERS
+import { FarmerDashboardWrapper } from "./dashboards/FarmerDashboardWrapper";
+import { ProviderDashboardWrapper } from "./dashboards/ProviderDashboardWrapper";
+import { AdminDashboardWrapper } from "./dashboards/AdminDashboardWrapper";
 
-// Profile
+// Profile Pages
 import { ProfilePage } from "./profile/ProfilePage";
 import { FarmerProfileForm } from "./profile/FarmerProfileForm";
 import { ProviderProfileForm } from "./profile/ProviderProfileForm";
@@ -30,6 +27,9 @@ import { UserReviews } from "./reviews/UserReviews";
 import { HowItWorks } from "./HowItWorks";
 import { normalizeUserProfile } from "../utils/profile";
 
+import MessagesPage from "./chat/MessagesPage";
+import ChatScreen from "./chat/ChatScreen";
+
 import { BookingsPage } from "./bookings/BookingsPage";
 import { WalletPage } from "./wallet/WalletPage";
 import { AdminDisputesPage } from "./admin/AdminDisputesPage";
@@ -37,8 +37,6 @@ import { DisputesPage } from "./disputes/DisputesPage";
 
 import DriverTrackingPage from "./tracking/DriverTrackingPage";
 import LiveTrackingView from "./tracking/LiveTrackingView";
-
-import ChatScreen from "./chat/ChatScreen";
 
 interface MainAppProps {
   user: any;
@@ -55,18 +53,21 @@ export const MainApp: React.FC<MainAppProps> = ({
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
     null
   );
+
+  // ⭐ tracking
+  const [trackingSessionId, setTrackingSessionId] = useState<string | null>(
+    null
+  );
+
   const [navigationHistory, setNavigationHistory] = useState<string[]>([
     "dashboard",
   ]);
 
   const [showProfileSetup, setShowProfileSetup] = useState(false);
-  const [trackingSessionId, setTrackingSessionId] = useState<string | null>(
-    null
-  );
 
-  // ----------------------------
-  // Profile check
-  // ----------------------------
+  // ---------------------------------------------------
+  // PROFILE COMPLETION CHECK
+  // ---------------------------------------------------
   useEffect(() => {
     if (!user || user.role === "admin") return;
 
@@ -80,12 +81,17 @@ export const MainApp: React.FC<MainAppProps> = ({
       });
   }, [user]);
 
-  // ----------------------------
-  // Navigation
-  // ----------------------------
-  const navigateTo = (view: string, providerId?: string, sessionId?: string) => {
-    setNavigationHistory((p) => [...p, currentView]);
+  // ---------------------------------------------------
+  // UNIVERSAL NAVIGATOR
+  // ---------------------------------------------------
+  const navigateTo = (
+    view: string,
+    providerId?: string,
+    sessionId?: string
+  ) => {
+    setNavigationHistory((prev) => [...prev, currentView]);
     setCurrentView(view);
+
     if (providerId) setSelectedProviderId(providerId);
     if (sessionId) setTrackingSessionId(sessionId);
   };
@@ -93,19 +99,34 @@ export const MainApp: React.FC<MainAppProps> = ({
   const navigateBack = () => {
     if (navigationHistory.length > 0) {
       const prev = navigationHistory[navigationHistory.length - 1];
-      setNavigationHistory((p) => p.slice(0, -1));
+      setNavigationHistory((prev) => prev.slice(0, -1));
       setCurrentView(prev);
     } else {
       setCurrentView("dashboard");
     }
   };
 
-  // ----------------------------
-  // Profile Update
-  // ----------------------------
+  // ---------------------------------------------------
+  // ⭐ IMPORTANT: new helpers exposed to dashboard
+  // ---------------------------------------------------
+  const goToDriverTracking = (sessionId: string) => {
+    navigateTo("driver-tracking", undefined, sessionId);
+  };
+
+  const goToLiveTracking = (sessionId: string) => {
+    navigateTo("live-tracking", undefined, sessionId);
+  };
+
+  const goToTrackingMap = (bookingId: string) => {
+    navigateTo("tracking-map", undefined, bookingId);
+  };
+
+  // ---------------------------------------------------
+  // PROFILE UPDATE LOGIC
+  // ---------------------------------------------------
   const handleProfileUpdate = async (data: any) => {
     try {
-      const targetUserId = user.id;
+      const userId = user.id;
 
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-profile`,
@@ -115,51 +136,55 @@ export const MainApp: React.FC<MainAppProps> = ({
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ ...data, user_id: targetUserId }),
+          body: JSON.stringify({ ...data, user_id: userId }),
         }
       );
 
       const result = await res.json();
       if (!result.success) throw new Error(result.error);
 
-      const profileResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${targetUserId}`,
+      const profileRes = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${userId}`,
         {
           headers: {
             Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
         }
       );
-      const profileData = await profileResponse.json();
 
-      const merged = normalizeUserProfile({
-        ...user,
-        ...profileData.user,
-      });
+      const profileData = await profileRes.json();
+      const merged = normalizeUserProfile({ ...user, ...profileData.user });
 
       onUserUpdate(merged);
       setShowProfileSetup(false);
-    } catch (e) {
-      console.error("Profile update error:", e);
+    } catch (err) {
+      console.error("Profile update error:", err);
     }
   };
 
-  // ----------------------------
-  // Render Views
-  // ----------------------------
+  // ---------------------------------------------------
+  // MAIN CONTENT
+  // ---------------------------------------------------
   const renderContent = () => {
     switch (currentView) {
       case "dashboard":
         if (user.role === "farmer")
-          return <FarmerDashboard onNavigate={navigateTo} />;
+          return (
+            <FarmerDashboardWrapper
+              onNavigate={navigateTo}
+              goToLiveTracking={goToLiveTracking}
+            />
+          );
+
         if (user.role === "provider")
-          return <ProviderDashboard onNavigate={navigateTo} />;
-        return (
-          <>
-            <AdminDashboard />
-            <AdminInviteGenerator />
-          </>
-        );
+          return (
+            <ProviderDashboardWrapper
+              onNavigate={navigateTo}
+              goToDriverTracking={goToDriverTracking}
+            />
+          );
+
+        return <AdminDashboardWrapper onNavigate={navigateTo} />;
 
       case "profile":
         return (
@@ -177,13 +202,11 @@ export const MainApp: React.FC<MainAppProps> = ({
           <PageTransition>
             <PageHeader
               title="Service Map"
-              subtitle="Find reliable providers around you"
+              subtitle="Find reliable providers"
               onBack={navigateBack}
             />
             <ServiceMap
-              onProviderSelect={(provider) =>
-                navigateTo("provider-profile", provider.id)
-              }
+              onProviderSelect={(p) => navigateTo("provider-profile", p.id)}
             />
           </PageTransition>
         );
@@ -193,7 +216,7 @@ export const MainApp: React.FC<MainAppProps> = ({
           <PageTransition>
             <PageHeader
               title="Marketplace"
-              subtitle="Browse agricultural services"
+              subtitle="Browse Services"
               onBack={navigateBack}
             />
             <ServiceMarketplace onNavigate={navigateTo} />
@@ -206,9 +229,8 @@ export const MainApp: React.FC<MainAppProps> = ({
             <MessagesPage
               userId={user.id}
               onBack={navigateBack}
-              onOpenChat={(otherUserId) => {
-                // Reuse selectedProviderId as "other user id" for chat
-                setSelectedProviderId(otherUserId);
+              onOpenChat={(otherId) => {
+                setSelectedProviderId(otherId);
                 navigateTo("chat");
               }}
             />
@@ -218,11 +240,7 @@ export const MainApp: React.FC<MainAppProps> = ({
       case "provider-profile":
         return (
           <PageTransition>
-            <PageHeader
-              title="Provider Profile"
-              subtitle="Service details and reviews"
-              onBack={navigateBack}
-            />
+            <PageHeader title="Provider" subtitle="Service Details" onBack={navigateBack} />
             <UserProfile userId={selectedProviderId!} isOwnProfile={false} />
           </PageTransition>
         );
@@ -245,6 +263,7 @@ export const MainApp: React.FC<MainAppProps> = ({
               userId={user.id}
               userRole={user.role}
               onNavigate={navigateTo}
+              goToLiveTracking={goToLiveTracking}
             />
           </PageTransition>
         );
@@ -252,7 +271,7 @@ export const MainApp: React.FC<MainAppProps> = ({
       case "wallet":
         return (
           <PageTransition>
-            <PageHeader title="Wallet" subtitle="Manage escrow & payments" />
+            <PageHeader title="Wallet" subtitle="Escrow & Payments" />
             <WalletPage userId={user.id} />
           </PageTransition>
         );
@@ -260,7 +279,7 @@ export const MainApp: React.FC<MainAppProps> = ({
       case "reviews":
         return (
           <PageTransition>
-            <PageHeader title="Reviews" subtitle="See what others say" />
+            <PageHeader title="Reviews" subtitle="See feedback" />
             <UserReviews userId={user.id} />
           </PageTransition>
         );
@@ -276,10 +295,7 @@ export const MainApp: React.FC<MainAppProps> = ({
         return (
           <PageTransition>
             {user.role === "admin" ? (
-              <>
-                <PageHeader title="Disputes" />
-                <AdminDisputesPage adminId={user.id} />
-              </>
+              <AdminDisputesPage adminId={user.id} />
             ) : (
               <DisputesPage
                 userId={user.id}
@@ -287,6 +303,17 @@ export const MainApp: React.FC<MainAppProps> = ({
                 onBack={navigateBack}
               />
             )}
+          </PageTransition>
+        );
+
+      // ⭐ UPDATED — tracking-map now loads LiveTrackingView instead of ServiceMap
+      case "tracking-map":
+        return (
+          <PageTransition>
+            <LiveTrackingView
+              sessionId={trackingSessionId!}
+              onBack={navigateBack}
+            />
           </PageTransition>
         );
 
@@ -316,13 +343,13 @@ export const MainApp: React.FC<MainAppProps> = ({
         );
 
       default:
-        return <FarmerDashboard onNavigate={navigateTo} />;
+        return <FarmerDashboardWrapper onNavigate={navigateTo} />;
     }
   };
 
-  // ----------------------------
-  // First-time setup form
-  // ----------------------------
+  // ---------------------------------------------------
+  // FIRST-TIME PROFILE SETUP
+  // ---------------------------------------------------
   if (showProfileSetup) {
     return (
       <PageTransition>
@@ -347,6 +374,9 @@ export const MainApp: React.FC<MainAppProps> = ({
     );
   }
 
+  // ---------------------------------------------------
+  // MAIN APP UI
+  // ---------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <Navigation user={user} onLogout={onLogout} onNavigate={navigateTo} />

@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Validate user exists
-    const { data: existingUser, error: userError } = await supabaseClient
+    const { data: existingUser, error: userError } = await supabase
       .from('users')
       .select('id, role')
       .eq('id', user_id)
@@ -77,7 +77,7 @@ Deno.serve(async (req: Request) => {
     updateData.updated_at = new Date().toISOString();
 
     // Update user profile
-    const { data: updatedUser, error: updateError } = await supabaseClient
+    const { data: updatedUser, error: updateError } = await supabase
       .from('users')
       .update(updateData)
       .eq('id', user_id)

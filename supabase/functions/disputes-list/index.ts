@@ -4,7 +4,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
 Deno.serve(async (req: Request) => {
@@ -13,32 +14,33 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
     const { user_id, admin_id } = await req.json();
 
     if (!user_id && !admin_id) {
-      throw new Error('user_id or admin_id is required');
+      throw new Error("user_id or admin_id is required");
     }
 
-    // Check if this is an admin request
+    // -------------------------------------
+    // 🔹 ADMIN MODE
+    // -------------------------------------
     if (admin_id) {
-      const { data: admin } = await supabaseClient
-        .from('users')
-        .select('role')
-        .eq('id', admin_id)
+      const { data: admin } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", admin_id)
         .maybeSingle();
 
-      if (!admin || admin.role !== 'admin') {
-        throw new Error('Unauthorized: Admin access required');
+      if (!admin || admin.role !== "admin") {
+        throw new Error("Unauthorized: Admin access required");
       }
 
-      // Get all disputes for admin
-      const { data: disputes, error: disputesError } = await supabaseClient
-        .from('disputes')
+      const { data: disputes, error: disputesError } = await supabase
+        .from("disputes")
         .select(`
           *,
           escrow:escrow_wallet(
@@ -56,10 +58,10 @@ Deno.serve(async (req: Request) => {
           raised_by_user:raised_by(id, name, phone, role),
           resolved_by_user:resolved_by(id, name)
         `)
-        .order('created_at', { ascending: false });
+        .order("created_at", { ascending: false });
 
       if (disputesError) {
-        throw new Error('Failed to fetch disputes: ' + disputesError.message);
+        throw new Error("Failed to fetch disputes: " + disputesError.message);
       }
 
       return new Response(
@@ -67,14 +69,15 @@ Deno.serve(async (req: Request) => {
           success: true,
           disputes: disputes || [],
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Get disputes for regular user (farmer or provider)
-    // Find disputes where user is either the raiser or involved in the escrow
-    const { data: disputes, error: disputesError } = await supabaseClient
-      .from('disputes')
+    // -------------------------------------
+    // 🔹 USER MODE (farmer or provider)
+    // -------------------------------------
+    const { data: disputes, error: disputesError } = await supabase
+      .from("disputes")
       .select(`
         *,
         escrow:escrow_wallet(
@@ -94,33 +97,38 @@ Deno.serve(async (req: Request) => {
         raised_by_user:raised_by(id, name, phone, role),
         resolved_by_user:resolved_by(id, name)
       `)
-      .or(`raised_by.eq.${user_id},escrow_wallet.farmer_id.eq.${user_id},escrow_wallet.provider_id.eq.${user_id}`)
-      .order('created_at', { ascending: false });
+      -- no .or() here
+      .order("created_at", { ascending: false });
 
     if (disputesError) {
-      throw new Error('Failed to fetch disputes: ' + disputesError.message);
+      throw new Error("Failed to fetch disputes: " + disputesError.message);
     }
 
-    // Filter disputes where user is involved
-    const userDisputes = disputes?.filter(dispute => {
-      const escrow = dispute.escrow as any;
-      return dispute.raised_by === user_id || 
-             escrow?.farmer_id === user_id || 
-             escrow?.provider_id === user_id;
-    }) || [];
+    const userDisputes =
+      disputes?.filter((dispute) => {
+        const escrow = dispute.escrow as any;
+        return (
+          dispute.raised_by === user_id ||
+          escrow?.farmer_id === user_id ||
+          escrow?.provider_id === user_id
+        );
+      }) || [];
 
     return new Response(
       JSON.stringify({
         success: true,
         disputes: userDisputes,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    console.error('Disputes list error:', error);
+  } catch (error: any) {
+    console.error("Disputes list error:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   }
 });

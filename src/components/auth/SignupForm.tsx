@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
-import { User, Phone, Lock, Eye, EyeOff, Loader, UserCheck } from 'lucide-react';
-import {
-  normalizeGhanaPhoneNumber,
-  isValidGhanaPhoneNumber,
-} from '../../utils/phone';
-import { useUserSession } from '../../contexts/UserSessionContext';
+// src/components/auth/SignupForm.tsx
+import React, { useState } from "react";
+import { User, Mail, Lock, Eye, EyeOff, Loader, UserCheck } from "lucide-react";
+import { useUserSession } from "../../contexts/UserSessionContext";
+import { supabase } from "../../lib/supabase";
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
-  onSignupSuccess: (user: any) => void;
+  onSignupSuccess: (email: string) => void;
   adminInviteToken?: string;
 }
 
@@ -19,125 +17,122 @@ export const SignupForm: React.FC<SignupFormProps> = ({
 }) => {
   const { setUser, refreshUser } = useUserSession();
 
-  // Allow admin creation during development
   const DEV_MODE_ALLOW_ADMIN_SIGNUP = true;
 
   const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    password: '',
-    confirmPassword: '',
-    role: adminInviteToken ? 'admin' : ('farmer' as 'farmer' | 'provider' | 'admin'),
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    role: adminInviteToken ? "admin" : ("farmer" as "farmer" | "provider" | "admin"),
   });
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
+  // -------------------------------------------
+  // SUBMIT HANDLER (Email-based)
+  // -------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
-    // Validation checks
+    // Validate password match
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match.");
       return;
     }
 
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+      setError("Password must be at least 6 characters long.");
       return;
     }
 
-    if (!isValidGhanaPhoneNumber(formData.phone)) {
-      setError('Please enter a valid Ghana phone number (+233XXXXXXXXX)');
+    if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
+      setError("Please enter a valid email address.");
       return;
     }
 
     setLoading(true);
 
     try {
-      const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
+      // 1️⃣ Create Supabase Auth User (email)
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+      });
 
-      // 🔹 Call your Supabase Edge Function for signup
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+      if (signUpError) throw signUpError;
+      if (!signUpData.user) throw new Error("Signup failed. Please try again.");
+
+      const authUser = signUpData.user;
+
+      // 2️⃣ Create user profile in your `users` table
+      const { data: profileRow, error: profileError } = await supabase
+        .from("users")
+        .insert([
+          {
+            id: authUser.id,
             name: formData.name,
-            phone: normalizedPhone,
-            password: formData.password,
+            email: formData.email.trim().toLowerCase(),
             role: formData.role,
-            admin_invite_token: adminInviteToken,
-          }),
-          // inside handleSubmit -> JSON.stringify(...)
-body: JSON.stringify({
-  name: formData.name,
-  phone: normalizedPhone,
-  password: formData.password,
-  role: formData.role,
-  // Providers will complete their profile (e.g. service categories) after signup
-  admin_invite_token: adminInviteToken,
-}),
+          },
+        ])
+        .select()
+        .single();
 
-        }
-      );
+      if (profileError) throw profileError;
 
-      const data = await response.json();
+      // 3️⃣ Fetch merged profile via Edge Function
+      const fullProfile = await refreshUser(authUser.id, profileRow);
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Signup failed');
-      }
-
-      const newUser = data.user;
-
-      // 🔹 Fetch full profile from Supabase after creation
-      const fullProfile = await refreshUser(newUser.id, newUser);
-
-      // 🔹 Persist to localStorage + context
+      // 4️⃣ Save profile to localStorage + context
       setUser(fullProfile);
 
-      // 🔹 Trigger parent success handler
-      onSignupSuccess(fullProfile);
+      // 5️⃣ Trigger parent flow → Splash → Welcome
+      onSignupSuccess(formData.email);
 
-      alert('✅ Account created successfully! Welcome to FarmConnect.');
     } catch (err) {
-      console.error('Signup Error:', err);
-      setError(err instanceof Error ? err.message : 'Signup failed');
+      console.error("❌ Signup Error:", err);
+      setError(err instanceof Error ? err.message : "Signup failed");
     } finally {
       setLoading(false);
     }
   };
 
+  // -------------------------------------------
+  // INPUT CHANGE HANDLER
+  // -------------------------------------------
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
-    setFormData((prev) => ({
-      ...prev,
-      [e.target.name]: e.target.value,
-    }));
+    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  // -------------------------------------------
+  // UI RENDER
+  // -------------------------------------------
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="bg-white p-8 rounded-xl shadow-lg">
+
+        {/* HEADER */}
         <div className="text-center mb-6">
-          {adminInviteToken ? (
+          {adminInviteToken && (
             <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <UserCheck className="w-8 h-8 text-purple-600" />
             </div>
-          ) : null}
+          )}
+
           <h2 className="text-2xl font-bold text-gray-900">
-            {adminInviteToken ? 'Admin Registration' : 'Create Account'}
+            {adminInviteToken ? "Admin Registration" : "Create Account"}
           </h2>
+
           <p className="text-gray-600">
             {adminInviteToken
-              ? 'Complete your admin account setup'
-              : 'Join FarmConnect to get started'}
+              ? "Complete your admin account setup"
+              : "Join FarmConnect to get started"}
           </p>
         </div>
 
@@ -147,125 +142,119 @@ body: JSON.stringify({
           </div>
         )}
 
+        {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Full Name */}
+
+          {/* NAME */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name
             </label>
             <div className="relative">
-              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
-                type="text"
                 name="name"
+                type="text"
                 value={formData.name}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Enter your full name"
+                className="w-full pl-10 py-3 border rounded-lg"
+                placeholder="Your name"
                 required
               />
             </div>
           </div>
 
-          {/* Phone Number */}
+          {/* EMAIL */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Phone Number
+              Email Address
             </label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
+                name="email"
+                type="email"
+                value={formData.email}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="+233123456789 or 0123456789"
+                className="w-full pl-10 py-3 border rounded-lg"
+                placeholder="example@gmail.com"
                 required
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              You can enter as +233XXXXXXXXX or 0XXXXXXXXX (Ghana numbers only)
-            </p>
           </div>
 
-          {/* Role Selection */}
+          {/* ROLE */}
           {!adminInviteToken && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Account Type
               </label>
+
               <select
                 name="role"
                 value={formData.role}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                required
+                className="w-full p-3 border rounded-lg"
               >
                 <option value="farmer">Farmer - Request Services</option>
-                <option value="provider">Service Provider - Offer Services</option>
+                <option value="provider">Provider - Offer Services</option>
                 {DEV_MODE_ALLOW_ADMIN_SIGNUP && (
-                  <option value="admin">Admin - Manage Platform (DEV ONLY)</option>
+                  <option value="admin">Admin (DEV ONLY)</option>
                 )}
               </select>
-              {DEV_MODE_ALLOW_ADMIN_SIGNUP && (
-                <p className="text-xs text-orange-600 mt-1">
-                  ⚠️ Admin option is only available in development mode
-                </p>
-              )}
             </div>
           )}
 
-          {/* Password */}
+          {/* PASSWORD */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
-                type={showPassword ? 'text' : 'password'}
                 name="password"
+                type={showPassword ? "text" : "password"}
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full pl-10 pr-12 py-3 border rounded-lg"
                 placeholder="Create a password"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
               >
-                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                {showPassword ? <EyeOff /> : <Eye />}
               </button>
             </div>
           </div>
 
-          {/* Confirm Password */}
+          {/* CONFIRM PASSWORD */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Confirm Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
-                type="password"
                 name="confirmPassword"
+                type="password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Confirm your password"
+                className="w-full pl-10 py-3 border rounded-lg"
+                placeholder="Re-enter password"
                 required
               />
             </div>
           </div>
 
-          {/* Submit */}
+          {/* SUBMIT */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center"
           >
             {loading ? (
               <>
@@ -273,7 +262,7 @@ body: JSON.stringify({
                 Creating Account...
               </>
             ) : (
-              'Create Account'
+              "Create Account"
             )}
           </button>
         </form>
@@ -281,10 +270,10 @@ body: JSON.stringify({
         {!adminInviteToken && (
           <div className="mt-6 text-center">
             <p className="text-gray-600">
-              Already have an account?{' '}
+              Already have an account?{" "}
               <button
                 onClick={onSwitchToLogin}
-                className="text-green-600 hover:text-green-700 font-semibold"
+                className="text-green-600 font-semibold"
               >
                 Sign In
               </button>

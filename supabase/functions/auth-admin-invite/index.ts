@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
@@ -30,7 +30,7 @@ serve(async (req) => {
     }
 
     // Verify the requesting user is an admin
-    const { data: admin, error: adminError } = await supabaseClient
+    const { data: admin, error: adminError } = await supabase
       .from('users')
       .select('id, role')
       .eq('id', admin_id)
@@ -50,7 +50,7 @@ serve(async (req) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
 
     // Create invite record
-    const { data: invite, error: inviteError } = await supabaseClient
+    const { data: invite, error: inviteError } = await supabase
       .from('admin_invites')
       .insert({
         invite_token: inviteToken,

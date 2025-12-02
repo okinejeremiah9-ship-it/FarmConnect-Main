@@ -2,7 +2,7 @@
 // Purpose: clean, single export; auto-sync optional
 
 import { useCallback, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import { supabase } from "../lib/supabase";
 
 export interface Coordinates {
   latitude: number;

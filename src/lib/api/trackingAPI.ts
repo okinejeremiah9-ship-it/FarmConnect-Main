@@ -1,7 +1,7 @@
 // Location: src/lib/api/trackingAPI.ts
 // Purpose: Complete GPS tracking API with real-time updates via Supabase
 
-import { supabase } from '../supabase';
+import { supabase } from "../supabase";
 
 /** Location model structure in Supabase */
 export interface Location {
@@ -22,7 +22,7 @@ export interface TrackingSession {
   driver_id: string;
   driver_name?: string;
   driver_phone?: string;
-  status: 'active' | 'paused' | 'completed';
+  status: "active" | "paused" | "completed";
   started_at: string;
   ended_at?: string;
   current_location?: Location;
@@ -39,13 +39,13 @@ export class TrackingAPI {
     driverPhone?: string
   ): Promise<TrackingSession> {
     const { data, error } = await supabase
-      .from('tracking_sessions')
+      .from("tracking_sessions")
       .insert({
         booking_id: bookingId,
         driver_id: driverId,
         driver_name: driverName,
         driver_phone: driverPhone,
-        status: 'active',
+        status: "active",
         started_at: new Date().toISOString(),
       })
       .select()
@@ -60,13 +60,13 @@ export class TrackingAPI {
    */
   static async getSession(sessionId: string): Promise<TrackingSession | null> {
     const { data, error } = await supabase
-      .from('tracking_sessions')
-      .select('*')
-      .eq('id', sessionId)
+      .from("tracking_sessions")
+      .select("*")
+      .eq("id", sessionId)
       .single();
 
     if (error) {
-      console.error('Error fetching session:', error);
+      console.error("Error fetching session:", error);
       return null;
     }
 
@@ -78,15 +78,15 @@ export class TrackingAPI {
    */
   static async updateSessionStatus(
     sessionId: string,
-    status: 'active' | 'paused' | 'completed'
+    status: "active" | "paused" | "completed"
   ): Promise<void> {
     const updateData: any = { status };
-    if (status === 'completed') updateData.ended_at = new Date().toISOString();
+    if (status === "completed") updateData.ended_at = new Date().toISOString();
 
     const { error } = await supabase
-      .from('tracking_sessions')
+      .from("tracking_sessions")
       .update(updateData)
-      .eq('id', sessionId);
+      .eq("id", sessionId);
 
     if (error) throw new Error(`Failed to update session: ${error.message}`);
   }
@@ -95,7 +95,7 @@ export class TrackingAPI {
    * ✅ Save a new GPS location (from driver’s device)
    */
   static async saveLocation(location: Location): Promise<void> {
-    const { error } = await supabase.from('tracking_locations').insert(location);
+    const { error } = await supabase.from("tracking_locations").insert(location);
     if (error) throw new Error(`Save location failed: ${error.message}`);
   }
 
@@ -104,13 +104,13 @@ export class TrackingAPI {
    */
   static async getLocations(sessionId: string): Promise<Location[]> {
     const { data, error } = await supabase
-      .from('tracking_locations')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('recorded_at', { ascending: false });
+      .from("tracking_locations")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("recorded_at", { ascending: false });
 
     if (error) {
-      console.error('Error fetching locations:', error);
+      console.error("Error fetching locations:", error);
       return [];
     }
 
@@ -122,15 +122,15 @@ export class TrackingAPI {
    */
   static async getLatestLocation(sessionId: string): Promise<Location | null> {
     const { data, error } = await supabase
-      .from('tracking_locations')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('recorded_at', { ascending: false })
+      .from("tracking_locations")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("recorded_at", { ascending: false })
       .limit(1)
       .single();
 
     if (error) {
-      console.error('Error fetching latest location:', error);
+      console.error("Error fetching latest location:", error);
       return null;
     }
 
@@ -144,15 +144,15 @@ export class TrackingAPI {
     bookingId: string
   ): Promise<TrackingSession | null> {
     const { data, error } = await supabase
-      .from('tracking_sessions')
-      .select('*')
-      .eq('booking_id', bookingId)
-      .order('created_at', { ascending: false })
+      .from("tracking_sessions")
+      .select("*")
+      .eq("booking_id", bookingId)
+      .order("created_at", { ascending: false })
       .limit(1)
       .single();
 
     if (error) {
-      console.error('Error fetching session by booking:', error);
+      console.error("Error fetching session by booking:", error);
       return null;
     }
 
@@ -169,11 +169,11 @@ export class TrackingAPI {
     const channel = supabase
       .channel(`tracking_${sessionId}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'tracking_locations',
+          event: "INSERT",
+          schema: "public",
+          table: "tracking_locations",
           filter: `session_id=eq.${sessionId}`,
         },
         (payload) => callback(payload.new as Location)
@@ -191,8 +191,8 @@ export class TrackingAPI {
    */
   static async getCurrentGPSPosition(): Promise<GeolocationPosition | null> {
     return new Promise((resolve, reject) => {
-      if (!('geolocation' in navigator)) {
-        reject(new Error('Geolocation is not supported on this device.'));
+      if (!("geolocation" in navigator)) {
+        reject(new Error("Geolocation is not supported on this device."));
         return;
       }
 
@@ -216,8 +216,8 @@ export class TrackingAPI {
     onPosition: (location: Location) => void,
     onError?: (error: GeolocationPositionError) => void
   ): number | null {
-    if (!('geolocation' in navigator)) {
-      console.warn('Geolocation not available.');
+    if (!("geolocation" in navigator)) {
+      console.warn("Geolocation not available.");
       return null;
     }
 
@@ -238,11 +238,11 @@ export class TrackingAPI {
           await TrackingAPI.saveLocation(location);
           onPosition(location);
         } catch (err) {
-          console.error('Error saving GPS location:', err);
+          console.error("Error saving GPS location:", err);
         }
       },
       (err) => {
-        console.error('GPS tracking error:', err);
+        console.error("GPS tracking error:", err);
         onError?.(err);
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
@@ -263,7 +263,7 @@ export class TrackingAPI {
    */
   private static async getBatteryLevel(): Promise<number | null> {
     try {
-      if ('getBattery' in navigator) {
+      if ("getBattery" in navigator) {
         const battery: any = await (navigator as any).getBattery();
         return Math.round(battery.level * 100);
       }

@@ -1,8 +1,9 @@
+// src/components/bookings/BookingsPage.tsx
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtimeBookingUpdates } from '../../hooks/useRealtimeSubscription';
 import { bookingAPI, escrowAPI } from '../../lib/api';
-import { TrackingAPI } from '../../lib/api/trackingAPI'; // ✅ Correct import
+import { TrackingAPI } from '../../lib/api/trackingAPI';
 import { 
   Clock, CheckCircle, XCircle, AlertTriangle, 
   MessageCircle, DollarSign 
@@ -66,7 +67,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
     }
   };
 
-  /** ✅ Create new tracking session for provider (start tracking) */
+  /** PROVIDER: Start tracking */
   const handleStartTracking = async (booking: any) => {
     try {
       setUpdating(booking.id);
@@ -74,22 +75,21 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
       const session = await TrackingAPI.createSession(
         booking.id,
         userId,
-        'Driver',
+        booking.provider?.name || 'Driver',
         booking.provider?.phone || ''
       );
 
       if (!session?.id) throw new Error('Tracking session could not be created.');
 
-      // Optional: Save session ID into bookings table
       await supabase
         .from('bookings')
         .update({ tracking_session_id: session.id })
         .eq('id', booking.id);
 
-      // Store temporarily for navigation continuity
       sessionStorage.setItem('pending_tracking_session', session.id);
       sessionStorage.setItem('pending_tracking_type', 'driver');
 
+      // 🚀 PROVIDER goes to DriverTrackingPage
       onNavigate('driver-tracking', undefined, session.id);
     } catch (error: any) {
       console.error('Failed to start tracking:', error);
@@ -99,7 +99,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
     }
   };
 
-  /** ✅ View ongoing tracking session (for farmers/admins) */
+  /** FARMER: View real-time tracking */
   const handleViewTracking = async (booking: any) => {
     try {
       if (!booking.tracking_session_id) {
@@ -110,6 +110,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
       sessionStorage.setItem('pending_tracking_session', booking.tracking_session_id);
       sessionStorage.setItem('pending_tracking_type', 'live');
 
+      // 🚀 FARMER goes directly to LIVE Uber-style tracking
       onNavigate('live-tracking', undefined, booking.tracking_session_id);
     } catch (error) {
       console.error('Failed to open tracking:', error);
@@ -132,6 +133,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      
       {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-6">
         {['all', 'pending', 'accepted', 'in-progress', 'completed', 'cancelled'].map((status) => (
@@ -149,7 +151,7 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
         ))}
       </div>
 
-      {/* Bookings */}
+      {/* List */}
       {filteredBookings.length === 0 ? (
         <div className="bg-white rounded-xl shadow-md p-12 text-center">
           <AlertTriangle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -169,6 +171,8 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
           {filteredBookings.map((booking: any) => (
             <div key={booking.id} className="bg-white rounded-xl shadow-md p-6">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+
+                {/* Left */}
                 <div className="flex-1">
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
                     {booking.service?.title || 'Service'}
@@ -203,8 +207,10 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
                   )}
                 </div>
 
+                {/* Right buttons */}
                 <div className="flex flex-col gap-2">
-                  {/* Tracking Actions */}
+
+                  {/* PROVIDER — Start job tracking */}
                   {userRole === 'provider' && booking.status === 'in-progress' && (
                     <button
                       onClick={() => handleStartTracking(booking)}
@@ -214,15 +220,19 @@ export const BookingsPage: React.FC<BookingsPageProps> = ({ userId, userRole, on
                       Start Tracking
                     </button>
                   )}
+
+                  {/* FARMER — View Live Tracking */}
                   {userRole === 'farmer' && booking.tracking_session_id && (
                     <button
                       onClick={() => handleViewTracking(booking)}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
                     >
-                      View Tracking
+                      View Live Tracking
                     </button>
                   )}
+
                 </div>
+
               </div>
             </div>
           ))}

@@ -4,7 +4,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 // -------------------------------------------
-// ✅ Initialize Supabase Client
+// ✅ Initialize Supabase Client (single source of truth)
 // -------------------------------------------
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -18,6 +18,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    // ✅ IMPORTANT: store session in browser localStorage
+    storage:
+      typeof window !== "undefined" ? window.localStorage : undefined,
   },
   realtime: {
     params: { eventsPerSecond: 10 },
@@ -29,14 +32,17 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // -------------------------------------------
 // For ChatWindow compatibility
 export const STORAGE_BUCKETS = {
+  // 🔥 New buckets (active)
   CHAT_IMAGES: "chat_uploads",
   CHAT_AUDIO: "audio_messages",
+  COMPLETION_IMAGES: "completion_photos",
 
-  // Keep your existing buckets untouched
+  // 🧩 Legacy buckets (kept for compatibility)
   AUDIO: "audio-messages",
   IMAGES: "message-images",
   PROFILES: "profile-pictures",
 };
+
 
 // -------------------------------------------
 // ✅ File Upload (Supports all buckets)
@@ -252,7 +258,7 @@ export function subscribeToMessages(
 }
 
 // -------------------------------------------
-// 📅 BOOKINGS
+// 📅 BOOKINGS (direct client helper; still available if you need it)
 // -------------------------------------------
 export async function createBooking(bookingData: any) {
   const { data, error } = await supabase

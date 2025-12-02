@@ -1,13 +1,21 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { useUserStats } from '../../hooks/useUserStats';
-import { ServiceRequest } from '../../types/auth';
-import { ServiceMarketplace } from '../marketplace/ServiceMarketplace';
-import { EscrowStatusBadge } from '../escrow/EscrowStatusBadge';
-import { DisputeModal } from '../escrow/DisputeModal';
-import { ReviewModal } from '../reviews/ReviewModal';
-import { useRealtimeBookingUpdates } from '../../hooks/useRealtimeSubscription';
-import { escrowAPI, disputeAPI } from '../../lib/api';
+// -------------------------------------------------------------
+// FARMER DASHBOARD — RESTORED UI + CURRENT LOGIC + CONFIRMATION FLOW + TRACKING
+// -------------------------------------------------------------
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useUserSession } from "../../contexts/UserSessionContext";
+
+import { useUserStats } from "../../hooks/useUserStats";
+import { useRealtimeBookingUpdates } from "../../hooks/useRealtimeSubscription";
+
+import { ServiceMarketplace } from "../marketplace/ServiceMarketplace";
+import { EscrowStatusBadge } from "../escrow/EscrowStatusBadge";
+import { DisputeModal } from "../escrow/DisputeModal";
+import { ReviewModal } from "../reviews/ReviewModal";
+
+import { escrowAPI, disputeAPI } from "../../lib/api";
+import { supabase } from "../../lib/supabase";
+
 import {
   Plus,
   Clock,
@@ -21,575 +29,548 @@ import {
   MessageSquare,
   Search,
   X,
-  Loader2
-} from 'lucide-react';
+  Loader2,
+} from "lucide-react";
+
+// 🔹 NEW: Completion review modal import
+import { CompletionReviewModal } from "../bookings/CompletionReviewModal";
 
 interface FarmerDashboardProps {
   onNavigate: (view: string, providerId?: string, sessionId?: string) => void;
 }
 
-export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) => {
+// -------------------------------------------------------------
+// WRAPPER — same pattern as ProviderDashboard
+// -------------------------------------------------------------
+export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({
+  onNavigate,
+}) => {
+  const { user, initializing } = useUserSession();
 
-  const { user } = useAuth();
-  const { stats, loading: statsLoading, refreshStats } = useUserStats(user?.id);
-  const { bookings, loading: bookingsLoading } = useRealtimeBookingUpdates(user?.id ?? '');
+  if (initializing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        Loading your dashboard...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-600">
+        You must be logged in.
+      </div>
+    );
+  }
+
+  return <FarmerDashboardInner user={user} onNavigate={onNavigate} />;
+};
+
+// -------------------------------------------------------------
+// REAL FARMER DASHBOARD
+// -------------------------------------------------------------
+const FarmerDashboardInner: React.FC<{
+  user: any;
+  onNavigate: FarmerDashboardProps["onNavigate"];
+}> = ({ user, onNavigate }) => {
+  const { stats, loading: statsLoading, refreshStats } = useUserStats(user.id);
+  const { bookings, loading: bookingsLoading } =
+    useRealtimeBookingUpdates(user.id);
+
   const [showRequestForm, setShowRequestForm] = useState(false);
-  const [currentView, setCurrentView] = useState<'dashboard' | 'marketplace'>('dashboard');
+  const [currentView, setCurrentView] = useState<"dashboard" | "marketplace">(
+    "dashboard"
+  );
+
   const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [selectedEscrow, setSelectedEscrow] = useState<any>(null);
+
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [selectedBookingForReview, setSelectedBookingForReview] = useState<any>(null);
+  const [selectedBookingForReview, setSelectedBookingForReview] =
+    useState<any>(null);
+
   const [disputes, setDisputes] = useState<any[]>([]);
   const [disputesLoading, setDisputesLoading] = useState(false);
-  const [releasingEscrowId, setReleasingEscrowId] = useState<string | null>(null);
+  const [releasingEscrowId, setReleasingEscrowId] = useState<string | null>(
+    null
+  );
 
+  // -----------------------------------------------------------
+  // NEW — PAY NOW STATE + HANDLER
+  // -----------------------------------------------------------
+  const [payingEscrowId, setPayingEscrowId] = useState<string | null>(null);
+
+  const handlePayNow = async (request: any) => {
+    try {
+      setPayingEscrowId(request.id);
+
+      const amount = request.price || 0;
+
+      if (!amount || amount <= 0) {
+        alert("No price set on this booking; contact provider.");
+        return;
+      }
+
+      const result = await escrowAPI.deposit(
+        request.id,
+        user.id,
+        amount
+      );
+
+      if (result?.authorization_url) {
+        window.location.href = result.authorization_url;
+      } else {
+        alert("Escrow deposit initiated. Follow further payment steps.");
+      }
+    } catch (err) {
+      console.error("Failed to start payment:", err);
+      alert("Could not start payment. Please try again.");
+    } finally {
+      setPayingEscrowId(null);
+    }
+  };
+
+  // -----------------------------------------------------------
+  // NEW — LIVE GPS TRACKING ENTRY POINT
+  // -----------------------------------------------------------
+  const openTracking = (bookingId: string) => {
+    onNavigate("tracking-map", undefined, bookingId);
+  };
+
+  // -----------------------------------------------------------
+  // Map raw bookings → farmer-friendly objects
+  // -----------------------------------------------------------
   const farmerBookings = useMemo(() => {
     if (!user?.id) return [];
 
     return (bookings || [])
-      .filter((booking) => booking.farmer_id === user.id)
-      .map((booking) => {
+      .filter((booking: any) => booking.farmer_id === user.id)
+      .map((booking: any) => {
         const escrowRecords = Array.isArray(booking.escrow_wallet)
           ? booking.escrow_wallet
           : booking.escrow_wallet
           ? [booking.escrow_wallet]
           : [];
 
-        const escrowRecord = escrowRecords[0] || null;
+        const escrowRecord = escrowRecords[0] ?? null;
 
-        const request: ServiceRequest = {
+        const request = {
           id: booking.id,
           farmerId: booking.farmer_id,
-          farmerName: booking.farmer?.name || user.name || 'Farmer',
+          farmerName: booking.farmer?.name || user.name,
           serviceId: booking.service_id,
-          serviceTitle: booking.service?.title || booking.service_title || 'Service Request',
+          serviceTitle:
+            booking.service?.title ||
+            booking.service_title ||
+            "Service Request",
           providerId: booking.provider_id,
-          providerName: booking.provider?.name || booking.provider_name || 'Provider',
-          status: (booking.status ?? 'pending') as ServiceRequest['status'],
-          location: booking.service_location || 'Not specified',
+          providerName:
+            booking.provider?.name || booking.provider_name || "Provider",
+          status: booking.status,
+          location: booking.service_location || "Not specified",
           dateNeeded: booking.scheduled_date,
-          message: booking.notes || '',
+          message: booking.notes || "",
           price: Number(booking.total_price ?? 0),
           createdAt: booking.created_at,
-          updatedAt: booking.updated_at || booking.created_at,
+          updatedAt: booking.updated_at,
           escrowStatus: escrowRecord?.status,
           escrowId: escrowRecord?.id,
-          canReview: booking.status === 'completed',
+          canReview: booking.status === "completed",
+
+          // completion details
+          completionImages: booking.completion_images ?? [],
+          completionNotes: booking.completion_notes ?? null,
+          completedAt: booking.completed_at ?? null,
         };
 
-        return {
-          booking,
-          request,
-          escrowRecord,
-        };
+        return { booking, request, escrowRecord };
       });
-  }, [bookings, user?.id, user?.name]);
+  }, [bookings, user]);
 
-  const activeRequests = useMemo(() => {
-    return farmerBookings.filter(({ request }) =>
-      ['pending', 'requested', 'accepted', 'in-progress'].includes(request.status)
-    );
-  }, [farmerBookings]);
+  const activeRequests = useMemo(
+    () =>
+      farmerBookings.filter(({ request }) =>
+        ["pending", "accepted", "in-progress", "requested", "farmer_rejected"].includes(
+          request.status ?? "pending"
+        )
+      ),
+    [farmerBookings]
+  );
 
-  const escrowActions = useMemo(() => {
-    return farmerBookings.filter(
-      ({ booking, escrowRecord }) =>
-        escrowRecord &&
-        escrowRecord.status === 'funded' &&
-        booking.status === 'completed'
-    );
-  }, [farmerBookings]);
+  const providerCompletedRequests = useMemo(
+    () =>
+      farmerBookings.filter(
+        ({ request }) => request.status === "provider_completed"
+      ),
+    [farmerBookings]
+  );
 
-  const openDisputes = useMemo(() => {
-    return disputes.filter((dispute) => dispute.status !== 'resolved');
-  }, [disputes]);
+  const completedRequests = useMemo(
+    () =>
+      farmerBookings.filter(({ request }) => request.status === "completed"),
+    [farmerBookings]
+  );
+
+  // -----------------------------------------------------------
+  // Disputes loading
+  // -----------------------------------------------------------
+  const openDisputes = useMemo(
+    () => disputes.filter((d) => d.status !== "resolved"),
+    [disputes]
+  );
 
   const loadDisputes = useCallback(async () => {
     if (!user?.id) return;
-
     try {
       setDisputesLoading(true);
       const data = await disputeAPI.listForUser(user.id);
-
-      if (data.success) {
-        setDisputes(data.disputes || []);
-      }
-    } catch (error) {
-      console.error('Failed to load disputes:', error);
+      if (data.success) setDisputes(data.disputes);
+    } catch (err) {
+      console.error(err);
     } finally {
       setDisputesLoading(false);
     }
-  }, [user?.id]);
+  }, [user.id]);
 
   useEffect(() => {
     loadDisputes();
   }, [loadDisputes]);
 
-  const handleRaiseDispute = (booking: any, escrowRecord: any) => {
-    if (!escrowRecord?.id) {
-      alert('Escrow details are not available for this booking yet.');
-      return;
-    }
-
-    setSelectedEscrow({
-      id: escrowRecord.id,
-      amount: Number(escrowRecord.amount ?? 0),
-      bookingId: booking.id,
+  // -----------------------------------------------------------
+  // Review + dispute handlers
+  // -----------------------------------------------------------
+  const handleOpenReview = (req: any) => {
+    setSelectedBookingForReview({
+      id: req.id,
+      serviceTitle: req.serviceTitle,
+      farmerName: req.farmerName,
+      providerName: req.providerName,
+      providerId: req.providerId,
+      farmerId: req.farmerId,
+      serviceId: req.serviceId,
     });
+    setShowReviewModal(true);
+  };
+
+  const handleReviewSubmitted = () => {
+    setShowReviewModal(false);
+    refreshStats();
+  };
+
+  const handleOpenDispute = (escrow: any) => {
+    if (!escrow) return;
+    setSelectedEscrow(escrow);
     setShowDisputeModal(true);
   };
 
   const handleDisputeCreated = () => {
     setShowDisputeModal(false);
     loadDisputes();
-    refreshStats();
   };
 
-  const handleReviewService = (booking: any) => {
-    setSelectedBookingForReview({
-      id: booking.id,
-      serviceTitle: booking.service?.title || booking.service_title || 'Service',
-      providerName: booking.provider?.name,
-      providerId: booking.provider_id,
-      farmerId: booking.farmer_id,
-      serviceId: booking.service_id,
-    });
-    setShowReviewModal(true);
+  // -----------------------------------------------------------
+  // NEW — CONFIRMATION / REJECTION OF COMPLETION
+  // -----------------------------------------------------------
+  const [confirmingBookingId, setConfirmingBookingId] =
+    useState<string | null>(null);
+  const [rejectingBookingId, setRejectingBookingId] =
+    useState<string | null>(null);
+
+  const [selectedCompletionBooking, setSelectedCompletionBooking] =
+    useState<any>(null);
+
+  const handleConfirmCompletion = async (request: any) => {
+    try {
+      setConfirmingBookingId(request.id);
+
+      await supabase
+        .from("bookings")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", request.id);
+
+      refreshStats();
+    } catch (err) {
+      console.error("Failed to confirm completion:", err);
+      alert("Could not confirm completion. Please try again.");
+    } finally {
+      setConfirmingBookingId(null);
+    }
   };
 
-  const handleReviewSubmitted = () => {
-    // Refresh the requests to update the UI
-    refreshStats();
-  };
-
-  const handleReleaseEscrow = async (escrowId: string) => {
-    if (!user?.id) return;
-
-    const confirmRelease = window.confirm('Release payment to the provider for this completed service?');
-    if (!confirmRelease) return;
+  const handleRejectCompletion = async (request: any) => {
+    const confirmReject = window.confirm(
+      "Are you sure this work is NOT correctly done? You can later raise a dispute if needed."
+    );
+    if (!confirmReject) return;
 
     try {
-      setReleasingEscrowId(escrowId);
-      await escrowAPI.release(escrowId, user.id);
+      setRejectingBookingId(request.id);
+
+      await supabase
+        .from("bookings")
+        .update({
+          status: "farmer_rejected",
+        })
+        .eq("id", request.id);
+
       refreshStats();
-    } catch (error: any) {
-      console.error('Failed to release escrow:', error);
-      alert(error?.message || 'Failed to release payment');
+    } catch (err) {
+      console.error("Failed to reject completion:", err);
+      alert("Could not reject completion. Please try again.");
     } finally {
-      setReleasingEscrowId(null);
+      setRejectingBookingId(null);
     }
   };
 
-  const getStatusIcon = (status: ServiceRequest['status']) => {
-    switch (status) {
-      case 'pending':
-      case 'requested':
-        return <Clock className="w-5 h-5 text-yellow-500" />;
-      case 'accepted':
-        return <CheckCircle className="w-5 h-5 text-blue-500" />;
-      case 'in-progress':
-        return <AlertCircle className="w-5 h-5 text-orange-500" />;
-      case 'completed':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      default:
-        return <Clock className="w-5 h-5 text-gray-500" />;
-    }
-  };
+  // -----------------------------------------------------------
+  // STATS COMPUTATION
+  // -----------------------------------------------------------
+  const totalSpent =
+    (stats as any)?.totalSpent ??
+    farmerBookings.reduce(
+      (sum, { request }) =>
+        request.status === "completed" ? sum + (request.price || 0) : sum,
+      0
+    );
 
-  const getStatusColor = (status: ServiceRequest['status']) => {
-    switch (status) {
-      case 'pending':
-      case 'requested':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'accepted':
-        return 'bg-blue-100 text-blue-800';
-      case 'in-progress':
-        return 'bg-orange-100 text-orange-800';
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const servicesUsed =
+    (stats as any)?.servicesUsed ?? completedRequests.length;
 
-  const getDisputeBadgeStyle = (status: string) => {
-    switch (status) {
-      case 'open':
-        return 'bg-red-100 text-red-800';
-      case 'investigating':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'resolved':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  if (currentView === 'marketplace') {
+  // -----------------------------------------------------------
+  // MARKETPLACE VIEW
+  // -----------------------------------------------------------
+  if (currentView === "marketplace") {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <div className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex justify-between items-center">
-              <div>
-                <button
-                  onClick={() => setCurrentView('dashboard')}
-                  className="text-green-600 hover:text-green-700 font-medium mb-2"
-                >
-                  ← Back to Dashboard
-                </button>
-                <h1 className="text-2xl font-bold text-gray-900">Service Marketplace</h1>
-                <p className="text-gray-600">Find and book agricultural services</p>
-              </div>
+        <div className="bg-white border-b shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Browse Services
+              </h1>
+              <p className="text-gray-600">
+                Find nearby mechanization and farm support services.
+              </p>
             </div>
+            <button
+              onClick={() => setCurrentView("dashboard")}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Back to dashboard
+            </button>
           </div>
         </div>
-        <ServiceMarketplace />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <ServiceMarketplace
+            currentUser={user}
+            onBack={() => setCurrentView("dashboard")}
+          />
+        </div>
       </div>
     );
   }
 
+  // -----------------------------------------------------------
+  // MAIN DASHBOARD UI
+  // -----------------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Welcome back, {user?.name}
-              </h1>
-              <p className="text-gray-600">Manage your farm services and requests</p>
-            </div>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setCurrentView('marketplace')}
-                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 flex items-center"
-              >
-                <Search className="w-5 h-5 mr-2" />
-                Browse Services
-              </button>
-              <button
-                onClick={() => setShowRequestForm(true)}
-                className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 flex items-center"
-              >
-                <Plus className="w-5 h-5 mr-2" />
-                Request Service
-              </button>
-            </div>
+
+      {/* Top welcome bar */}
+      <div className="bg-white border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Welcome back, {user.name}
+            </h1>
+            <p className="text-gray-600">Manage your farm services and requests</p>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setCurrentView("marketplace")}
+              className="inline-flex items-center px-5 py-2.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700"
+            >
+              <Search className="w-4 h-4 mr-2" />
+              Browse Services
+            </button>
+            <button
+              onClick={() => onNavigate("request-service")}
+              className="inline-flex items-center px-5 py-2.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Request Service
+            </button>
           </div>
         </div>
       </div>
 
+      {/* Inner content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Cards */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Clock className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Active Requests</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {statsLoading ? '...' : stats.activeRequests}
-                </p>
-              </div>
-            </div>
-          </div>
 
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Completed</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {statsLoading ? '...' : stats.completedServices}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Total Spent</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {statsLoading ? '...' : `₵${stats.totalSpent.toLocaleString()}`}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl shadow-sm">
-            <div className="flex items-center">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                <Tractor className="w-6 h-6 text-orange-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-600">Services Used</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {statsLoading ? '...' : stats.servicesUsed}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Active Requests */}
-        <div className="bg-white rounded-xl shadow-sm">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">Your Service Requests</h2>
-            <p className="text-gray-600">Track the status of your ongoing service requests</p>
+        {/* ACTIVE REQUESTS */}
+        <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+          <div className="px-6 py-4 border-b">
+            <h2 className="text-lg md:text-xl font-bold text-gray-900">
+              Your Service Requests
+            </h2>
+            <p className="text-sm text-gray-600">
+              Track the status of your ongoing service requests
+            </p>
           </div>
 
           <div className="p-6">
             {bookingsLoading ? (
-              <div className="flex items-center justify-center py-12 text-gray-600">
-                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+              <div className="flex flex-col items-center justify-center py-10 text-gray-500">
+                <Loader2 className="w-8 h-8 animate-spin mb-3" />
                 Loading your requests...
               </div>
             ) : activeRequests.length === 0 ? (
-              <div className="text-center py-12">
-                <Tractor className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No active requests</h3>
-                <p className="text-gray-600 mb-4">Start by requesting a service for your farm</p>
-                <button
-                  onClick={() => setShowRequestForm(true)}
-                  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
-                >
-                  Request Service
-                </button>
-                <button
-                  onClick={() => setCurrentView('marketplace')}
-                  className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 ml-3"
-                >
-                  Browse Marketplace
-                </button>
+              <div className="flex flex-col items-center justify-center py-16 text-center">
+                <Tractor className="w-16 h-16 text-gray-300 mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                  No active requests
+                </h3>
+                <p className="text-sm text-gray-600 mb-6 max-w-md">
+                  Start by requesting a service for your farm.
+                </p>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={() => onNavigate("request-service")}
+                    className="inline-flex items-center justify-center px-5 py-2.5 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Request Service
+                  </button>
+                  <button
+                    onClick={() => setCurrentView("marketplace")}
+                    className="inline-flex items-center justify-center px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
+                  >
+                    <Search className="w-4 h-4 mr-2" />
+                    Browse Marketplace
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
-                {activeRequests.map(({ booking, request, escrowRecord }) => {
-                  const isTractor = request.serviceTitle?.toLowerCase().includes('tractor');
-                  const canReleaseEscrow =
-                    escrowRecord?.status === 'funded' && booking.status === 'completed';
-
-                  return (
-                    <div key={request.id} className="border border-gray-200 rounded-lg p-6">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-start space-x-4">
-                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                            {isTractor ? (
-                              <Tractor className="w-6 h-6 text-green-600" />
-                            ) : (
-                              <Wrench className="w-6 h-6 text-green-600" />
-                            )}
-                          </div>
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900">
-                              {request.serviceTitle}
-                            </h3>
-                            <p className="text-gray-600">by {request.providerName}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          {getStatusIcon(request.status)}
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(request.status)}`}>
-                            {request.status.charAt(0).toUpperCase() + request.status.slice(1).replace('-', ' ')}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid md:grid-cols-3 gap-4 mb-4">
-                        <div className="flex items-center text-gray-600">
-                          <MapPin className="w-4 h-4 mr-2" />
-                          <span className="text-sm">{request.location}</span>
-                        </div>
-                        <div className="flex items-center text-gray-600">
-                          <Calendar className="w-4 h-4 mr-2" />
-                          <span className="text-sm">{new Date(request.dateNeeded).toLocaleDateString()}</span>
-                        </div>
-                        <div className="flex items-center text-gray-600">
-                          <DollarSign className="w-4 h-4 mr-2" />
-                          <span className="text-sm">₵{request.price.toLocaleString()}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <p className="text-gray-600 text-sm flex-1">{request.message || 'No additional notes'}</p>
-                        <div className="flex flex-wrap gap-2 justify-end">
-                          <button
-                            onClick={() => onNavigate('bookings')}
-                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 flex items-center"
-                          >
-                            <MessageSquare className="w-4 h-4 mr-1" />
-                            Message Provider
-                          </button>
-                          {request.escrowStatus && (
-                            <EscrowStatusBadge
-                              status={request.escrowStatus}
-                              amount={request.price}
-                            />
-                          )}
-                          {canReleaseEscrow && request.escrowId && (
-                            <button
-                              onClick={() => handleReleaseEscrow(request.escrowId!)}
-                              disabled={releasingEscrowId === request.escrowId}
-                              className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 disabled:opacity-60 flex items-center"
-                            >
-                              {releasingEscrowId === request.escrowId ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                                  Releasing...
-                                </>
-                              ) : (
-                                'Release Payment'
-                              )}
-                            </button>
-                          )}
-                          {escrowRecord && (
-                            <button
-                              onClick={() => handleRaiseDispute(booking, escrowRecord)}
-                              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-red-700"
-                            >
-                              Report Issue
-                            </button>
-                          )}
-                          {request.status === 'completed' && request.canReview && (
-                            <button
-                              onClick={() => handleReviewService(booking)}
-                              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"
-                            >
-                              Rate Service
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Escrow Actions */}
-        <div className="bg-white rounded-xl shadow-sm mt-8">
-          <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Escrow Actions</h2>
-              <p className="text-gray-600">Release funds once you are satisfied with completed services.</p>
-            </div>
-            <button
-              onClick={() => onNavigate('bookings')}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              Manage Bookings
-            </button>
-          </div>
-          <div className="p-6">
-            {escrowActions.length === 0 ? (
-              <p className="text-gray-600">No escrow payments are waiting for release right now.</p>
-            ) : (
-              <div className="space-y-3">
-                {escrowActions.map(({ booking, request, escrowRecord }) => (
+                {activeRequests.map(({ request, escrowRecord }) => (
                   <div
-                    key={`${booking.id}-escrow`}
-                    className="border border-gray-100 rounded-lg p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                    key={request.id}
+                    className="border border-gray-200 rounded-xl p-4 md:p-5"
                   >
-                    <div>
-                      <h3 className="text-base font-semibold text-gray-900">{request.serviceTitle}</h3>
-                      <p className="text-sm text-gray-600">
-                        Provider: {request.providerName} • Completed on{' '}
-                        {new Date(request.dateNeeded).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-gray-700 font-medium">
-                        Amount: ₵{Number(escrowRecord?.amount ?? request.price).toLocaleString()}
-                      </span>
-                      <button
-                        onClick={() => handleReleaseEscrow(request.escrowId!)}
-                        disabled={releasingEscrowId === request.escrowId}
-                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-60 flex items-center"
-                      >
-                        {releasingEscrowId === request.escrowId ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            Releasing...
-                          </>
-                        ) : (
-                          'Release Payment'
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Disputes */}
-        <div className="bg-white rounded-xl shadow-sm mt-8">
-          <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Disputes</h2>
-              <p className="text-gray-600">Monitor any issues raised for your bookings and follow their progress.</p>
-            </div>
-            <button
-              onClick={() => onNavigate('disputes')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              View All Disputes
-            </button>
-          </div>
-          <div className="p-6">
-            {disputesLoading ? (
-              <div className="flex items-center text-gray-600">
-                <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                Loading disputes...
-              </div>
-            ) : openDisputes.length === 0 ? (
-              <p className="text-gray-600">You have no active disputes at the moment.</p>
-            ) : (
-              <div className="space-y-3">
-                {openDisputes.slice(0, 3).map((dispute) => (
-                  <div
-                    key={dispute.id}
-                    className="border-l-4 border-red-500 bg-red-50 p-4 rounded-lg"
-                  >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex justify-between items-start gap-4">
                       <div>
-                        <p className="font-semibold text-gray-900">{dispute.reason}</p>
+                        <h3 className="font-semibold text-gray-900">
+                          {request.serviceTitle}
+                        </h3>
                         <p className="text-sm text-gray-600">
-                          Service: {dispute.escrow?.booking?.service?.title || 'Booking'}
+                          Provider: {request.providerName}
                         </p>
                       </div>
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${getDisputeBadgeStyle(dispute.status)}`}
-                      >
-                        {dispute.status.replace('-', ' ')}
-                      </span>
+
+                      <div className="text-right">
+                        {request.price ? (
+                          <p className="text-lg font-bold text-green-600">
+                            ₵{request.price.toFixed(2)}
+                          </p>
+                        ) : null}
+
+                        <span
+                          className={`inline-flex mt-1 px-3 py-1 rounded-full text-xs font-semibold ${
+                            request.status === "in-progress"
+                              ? "bg-blue-100 text-blue-700"
+                              : request.status === "accepted"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-yellow-100 text-yellow-700"
+                          }`}
+                        >
+                          {request.status}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600 flex flex-wrap gap-4">
-                      <span>
-                        Amount:{' '}
-                        ₵{Number(dispute.escrow?.amount ?? 0).toLocaleString()}
-                      </span>
-                      <span>
-                        Raised:{' '}
-                        {new Date(dispute.created_at).toLocaleDateString()}
-                      </span>
-                      <span>
-                        Raised by: {dispute.raised_by_user?.name || 'You'}
-                      </span>
+
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span>
+                          {request.dateNeeded
+                            ? new Date(request.dateNeeded).toLocaleString()
+                            : "Date not set"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <span>{request.location}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-gray-400" />
+                        <span>
+                          Requested{" "}
+                          {request.createdAt
+                            ? new Date(request.createdAt).toLocaleString()
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+
+                    {request.message && (
+                      <p className="mt-3 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
+                        {request.message}
+                      </p>
+                    )}
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <EscrowStatusBadge
+                        status={request.escrowStatus ?? "pending"}
+                      />
+
+                      {/* CHAT */}
+                      <button
+                        onClick={() => onNavigate("chat", request.providerId)}
+                        className="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        <MessageSquare className="w-4 h-4 mr-2" />
+                        Message provider
+                      </button>
+
+                      {/* NEW: TRACK SERVICE LIVE */}
+                      {request.status === "in-progress" && (
+                        <button
+                          onClick={() => openTracking(request.id)}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                        >
+                          <MapPin className="w-4 h-4 mr-2" />
+                          Track Service
+                        </button>
+                      )}
+
+                      {request.canReview && (
+                        <button
+                          onClick={() => handleOpenReview(request)}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Rate provider
+                        </button>
+                      )}
+
+                      {escrowRecord && (
+                        <button
+                          onClick={() => handleOpenDispute(escrowRecord)}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100"
+                        >
+                          <AlertCircle className="w-4 h-4 mr-2" />
+                          Raise dispute
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -597,106 +578,358 @@ export const FarmerDashboard: React.FC<FarmerDashboardProps> = ({ onNavigate }) 
             )}
           </div>
         </div>
+
+        {/* PROVIDER COMPLETED JOBS — AWAITING CONFIRMATION */}
+        {providerCompletedRequests.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border overflow-hidden mt-10">
+            <div className="px-6 py-4 border-b flex flex-col gap-1">
+              <h2 className="text-lg md:text-xl font-bold text-gray-900">
+                Service Completion Pending Your Confirmation
+              </h2>
+              <p className="text-sm text-gray-600">
+                Your provider has marked these jobs as completed. Please review
+                the photos and notes, then confirm or flag any issues.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {providerCompletedRequests.map(
+                ({ request, escrowRecord }) => (
+                  <div
+                    key={request.id}
+                    className="border border-gray-200 rounded-xl p-4 md:p-5"
+                  >
+                    <div className="flex justify-between items-start gap-4">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">
+                          {request.serviceTitle}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Provider: {request.providerName}
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        {request.price ? (
+                          <p className="text-lg font-bold text-green-600">
+                            ₵{request.price.toFixed(2)}
+                          </p>
+                        ) : null}
+
+                        <span className="inline-flex mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                          Awaiting your confirmation
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* TIME + LOCATION */}
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span>
+                          Job date{" "}
+                          {request.dateNeeded
+                            ? new Date(request.dateNeeded).toLocaleString()
+                            : "Not set"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <span>{request.location}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-gray-400" />
+                        <span>
+                          Requested{" "}
+                          {request.createdAt
+                            ? new Date(request.createdAt).toLocaleString()
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* PROVIDER NOTES */}
+                    {request.completionNotes && (
+                      <p className="mt-3 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
+                        <span className="font-semibold">Provider note: </span>
+                        {request.completionNotes}
+                      </p>
+                    )}
+
+                    {/* COMPLETION IMAGES */}
+                    {request.completionImages &&
+                      request.completionImages.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          {request.completionImages.map(
+                            (url: string, idx: number) => (
+                              <img
+                                key={idx}
+                                src={url}
+                                alt={`Completion ${idx + 1}`}
+                                className="w-24 h-24 object-cover rounded-lg border"
+                              />
+                            )
+                          )}
+                        </div>
+                      )}
+
+                    {/* ACTIONS */}
+                    <div className="mt-4 flex flex-wrap gap-2 items-center">
+                      <EscrowStatusBadge
+                        status={request.escrowStatus ?? "pending"}
+                      />
+
+                      {/* NEW: VIEW TRACKING HISTORY */}
+                      {request.status === "provider_completed" && (
+                        <button
+                          onClick={() => openTracking(request.id)}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                        >
+                          <MapPin className="w-4 h-4 mr-2" />
+                          View tracking history
+                        </button>
+                      )}
+
+                      {/* REVIEW IMAGES MODAL */}
+                      {request.completionImages &&
+                        request.completionImages.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedCompletionBooking({
+                                id: request.id,
+                                completion_photos:
+                                  request.completionImages,
+                              })
+                            }
+                            className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                          >
+                            Review completion
+                          </button>
+                        )}
+
+                      {/* CONFIRM BUTTON */}
+                      <button
+                        onClick={() => handleConfirmCompletion(request)}
+                        disabled={
+                          confirmingBookingId === request.id ||
+                          rejectingBookingId === request.id
+                        }
+                        className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {confirmingBookingId === request.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Confirming...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="w-4 h-4 mr-2" />
+                            This is correct — confirm
+                          </>
+                        )}
+                      </button>
+
+                      {/* REJECT BUTTON */}
+                      <button
+                        onClick={() => handleRejectCompletion(request)}
+                        disabled={
+                          confirmingBookingId === request.id ||
+                          rejectingBookingId === request.id
+                        }
+                        className="inline-flex items-center px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {rejectingBookingId === request.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <X className="w-4 h-4 mr-2" />
+                            This is not correct
+                          </>
+                        )}
+                      </button>
+
+                      {/* DISPUTE BUTTON */}
+                      {escrowRecord && (
+                        <button
+                          onClick={() => handleOpenDispute(escrowRecord)}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-red-200 text-sm font-semibold text-red-700 hover:bg-red-50"
+                        >
+                          <AlertCircle className="w-4 h-4 mr-2" />
+                          Raise dispute
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* COMPLETED REQUESTS */}
+        {completedRequests.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border overflow-hidden mt-10">
+            <div className="px-6 py-4 border-b">
+              <h2 className="text-lg md:text-xl font-bold text-gray-900">
+                Completed Jobs
+              </h2>
+              <p className="text-sm text-gray-600">
+                Review finished work and complete payments.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {completedRequests.map(({ request, escrowRecord }) => (
+                <div
+                  key={request.id}
+                  className="border border-gray-200 rounded-xl p-4 md:p-5"
+                >
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">
+                        {request.serviceTitle}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Provider: {request.providerName}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      {request.price ? (
+                        <p className="text-lg font-bold text-green-600">
+                          ₵{request.price.toFixed(2)}
+                        </p>
+                      ) : null}
+
+                      <span className="inline-flex mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                        completed
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* TIME + LOCATION */}
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                      <span>
+                        Completed on{" "}
+                        {request.completedAt
+                          ? new Date(request.completedAt).toLocaleString()
+                          : ""}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-gray-400" />
+                      <span>{request.location}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-gray-400" />
+                      <span>
+                        Requested{" "}
+                        {request.createdAt
+                          ? new Date(request.createdAt).toLocaleString()
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* PROVIDER NOTES */}
+                  {request.completionNotes && (
+                    <p className="mt-3 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
+                      Provider note: {request.completionNotes}
+                    </p>
+                  )}
+
+                  {/* COMPLETION IMAGES */}
+                  {request.completionImages &&
+                    request.completionImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        {request.completionImages.map(
+                          (url: string, idx: number) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`Completion ${idx + 1}`}
+                              className="w-24 h-24 object-cover rounded-lg border"
+                            />
+                          )
+                        )}
+                      </div>
+                    )}
+
+                  {/* PAYMENT CTA */}
+                  {request.status === "completed" &&
+                    (!request.escrowStatus ||
+                      request.escrowStatus === "pending") && (
+                      <button
+                        onClick={() => handlePayNow(request)}
+                        disabled={payingEscrowId === request.id}
+                        className="mt-4 inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {payingEscrowId === request.id ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Starting payment…
+                          </>
+                        ) : (
+                          <>
+                            <DollarSign className="w-4 h-4 mr-1" />
+                            Pay now for completed job
+                          </>
+                        )}
+                      </button>
+                    )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Request Service Modal */}
-      {showRequestForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-900">Request a Service</h3>
-              <button
-                type="button"
-                onClick={() => setShowRequestForm(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            
-            <form className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Service Type
-                </label>
-                <select className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500">
-                  <option>Tractor Rental</option>
-                  <option>Equipment Repair</option>
-                  <option>Agricultural Advisory</option>
-                  <option>Harvester Rental</option>
-                </select>
-              </div>
+      {/* Modals */}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Location
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
-                  placeholder="Enter your farm location"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Date Needed
-                </label>
-                <input
-                  type="date"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Details
-                </label>
-                <textarea
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
-                  rows={3}
-                  placeholder="Describe your requirements..."
-                ></textarea>
-              </div>
-
-              <div className="flex space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowRequestForm(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg font-semibold hover:bg-gray-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700"
-                >
-                  Submit Request
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Dispute Modal */}
-      {showDisputeModal && selectedEscrow && (
-        <DisputeModal
-          escrowId={selectedEscrow.id}
-          userId={user?.id || ''}
-          bookingId={selectedEscrow.bookingId}
-          onClose={() => setShowDisputeModal(false)}
-          onSuccess={handleDisputeCreated}
+      {/* COMPLETION REVIEW MODAL */}
+      {selectedCompletionBooking && (
+        <CompletionReviewModal
+          booking={selectedCompletionBooking}
+          onClose={() => setSelectedCompletionBooking(null)}
+          onApprove={() => {
+            handleConfirmCompletion(selectedCompletionBooking);
+            setSelectedCompletionBooking(null);
+          }}
+          onReject={() => {
+            handleRejectCompletion(selectedCompletionBooking);
+            setSelectedCompletionBooking(null);
+          }}
         />
       )}
 
-      {/* Review Modal */}
+      {/* REVIEW MODAL */}
       {showReviewModal && selectedBookingForReview && (
         <ReviewModal
           booking={selectedBookingForReview}
-          currentUserId={user?.id || ''}
+          currentUserId={user?.id ?? ""}
           onClose={() => setShowReviewModal(false)}
           onReviewSubmitted={handleReviewSubmitted}
+        />
+      )}
+
+      {/* DISPUTE MODAL */}
+      {showDisputeModal && selectedEscrow && (
+        <DisputeModal
+          isOpen={showDisputeModal}
+          escrow={selectedEscrow}
+          currentUserId={user?.id ?? ""}
+          onClose={() => setShowDisputeModal(false)}
+          onDisputeCreated={handleDisputeCreated}
         />
       )}
     </div>

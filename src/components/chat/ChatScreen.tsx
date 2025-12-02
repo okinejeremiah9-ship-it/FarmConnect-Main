@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { ChatWindow } from "./ChatWindow";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabase";
+
 
 interface ChatScreenProps {
   userId: string;

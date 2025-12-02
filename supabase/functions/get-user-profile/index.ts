@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } }
@@ -44,7 +44,7 @@ Deno.serve(async (req: Request) => {
     if (!userId) throw new Error("User ID is required");
 
     // Fetch user
-    const { data: user, error: userError } = await supabaseClient
+    const { data: user, error: userError } = await supabase
       .from("users")
       .select(`
         id,
@@ -84,7 +84,7 @@ Deno.serve(async (req: Request) => {
     // If provider, also fetch their service listings
     let services: any[] = [];
     if (user.role === "provider") {
-      const { data: servicesData } = await supabaseClient
+      const { data: servicesData } = await supabase
         .from("services")
         .select("*")
         .eq("provider_id", userId);
@@ -93,7 +93,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Fetch recent reviews
-    const { data: reviews } = await supabaseClient
+    const { data: reviews } = await supabase
       .from("reviews")
       .select(`
         id,

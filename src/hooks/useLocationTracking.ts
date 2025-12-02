@@ -60,10 +60,11 @@ export const useLocationTracking = ({
           if (now - lastUpdateRef.current < updateInterval) return;
           lastUpdateRef.current = now;
 
+          // ✅ UPDATED: use latitude / longitude
           const newLocation: Location = {
             session_id: sessionId,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
+            latitude: pos.coords.latitude,      // UPDATED
+            longitude: pos.coords.longitude,    // UPDATED
             accuracy: pos.coords.accuracy,
             recorded_at: new Date().toISOString(),
             battery_level: batteryLevel || undefined,
@@ -73,7 +74,17 @@ export const useLocationTracking = ({
           setCurrentLocation(newLocation);
 
           try {
-            await TrackingAPI.saveLocation(newLocation);
+            // ✅ UPDATED: save latitude + longitude only
+            await TrackingAPI.saveLocation({
+              session_id: sessionId,
+              latitude: newLocation.latitude,     // UPDATED
+              longitude: newLocation.longitude,   // UPDATED
+              accuracy: newLocation.accuracy,
+              recorded_at: newLocation.recorded_at,
+              battery_level: newLocation.battery_level,
+              speed: newLocation.speed,
+            });
+
             onLocationUpdate?.(newLocation);
           } catch (err) {
             console.error('Save location failed:', err);

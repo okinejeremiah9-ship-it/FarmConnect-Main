@@ -13,7 +13,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
@@ -46,7 +46,7 @@ serve(async (req) => {
       const { reference, metadata } = event.data
 
       // Update escrow status to funded
-      const { error: updateError } = await supabaseClient
+      const { error: updateError } = await supabase
         .from('escrow_wallet')
         .update({
           status: 'funded',
@@ -61,7 +61,7 @@ serve(async (req) => {
 
       // Update booking status to accepted (auto-accept when payment is made)
       if (metadata.booking_id) {
-        await supabaseClient
+        await supabase
           .from('bookings')
           .update({
             status: 'accepted',

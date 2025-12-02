@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Validate escrow belongs to farmer and is funded
-    const { data: escrow, error: escrowError } = await supabaseClient
+    const { data: escrow, error: escrowError } = await supabase
       .from('escrow_wallet')
       .select('*')
       .eq('id', escrow_id)
@@ -41,20 +41,20 @@ Deno.serve(async (req: Request) => {
     }
 
     // Update escrow status
-    await supabaseClient
+    await supabase
       .from('escrow_wallet')
       .update({ status: 'released' })
       .eq('id', escrow_id);
 
     // Add funds to provider wallet
-    const { data: providerWallet } = await supabaseClient
+    const { data: providerWallet } = await supabase
       .from('wallets')
       .select('*')
       .eq('user_id', escrow.provider_id)
       .maybeSingle();
 
     if (providerWallet) {
-      await supabaseClient
+      await supabase
         .from('wallets')
         .update({
           balance: parseFloat(providerWallet.balance) + parseFloat(escrow.amount),
@@ -63,7 +63,7 @@ Deno.serve(async (req: Request) => {
         .eq('user_id', escrow.provider_id);
     } else {
       // Create wallet if doesn't exist
-      await supabaseClient
+      await supabase
         .from('wallets')
         .insert({
           user_id: escrow.provider_id,
@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Update booking status to completed
-    await supabaseClient
+    await supabase
       .from('bookings')
       .update({ status: 'completed' })
       .eq('id', escrow.booking_id);

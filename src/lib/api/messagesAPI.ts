@@ -1,93 +1,86 @@
-import { supabase } from '../supabase';
+import { supabase } from "../supabase";
 
-// ✅ Table name
-const MESSAGES_TABLE = 'messages';
+const MESSAGES_TABLE = "messages";
 
 export const messagesAPI = {
   /**
-   * ✅ Send a message (text, image, or audio)
+   * SEND MESSAGE
+   * (always goes through your EDGE FUNCTION now)
    */
-  async send({
-    booking_id = null,
-    sender_id,
-    receiver_id,
-    message_type = 'text',
-    content = '',
-    media_url = null,
-  }: {
+  async send(payload: {
     booking_id?: string | null;
     sender_id: string;
     receiver_id: string;
-    message_type: 'text' | 'image' | 'audio';
+    message_type: "text" | "image" | "audio";
     content?: string;
     media_url?: string | null;
   }) {
-    try {
-      const { data, error } = await supabase.from(MESSAGES_TABLE).insert([
-        {
-          booking_id,
-          sender_id,
-          receiver_id,
-          message_type,
-          content,
-          media_url,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/messages-send`;
 
-      if (error) throw error;
-      return data;
-    } catch (err) {
-      console.error('❌ Error sending message:', err);
-      throw new Error('Failed to send message');
-    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await response.json();
+    if (!json.success) throw new Error(json.error || "Failed to send message");
+    return json.message;
   },
 
   /**
-   * ✅ Fetch all messages between two users (optional booking_id filter)
+   * FETCH MESSAGES BETWEEN TWO USERS
    */
-  async fetchConversation(userId: string, otherUserId: string, booking_id?: string | null) {
+  async fetchConversation(
+    userId: string,
+    otherUserId: string,
+    booking_id?: string | null
+  ) {
     try {
       let query = supabase
         .from(MESSAGES_TABLE)
         .select(
           `
           *,
-          sender:sender_id(id, name, profile_pic),
-          receiver:receiver_id(id, name, profile_pic)
+          sender:sender_id(id, name, contact_person, business_name),
+          receiver:receiver_id(id, name, contact_person, business_name)
         `
         )
-        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
-        .or(`sender_id.eq.${otherUserId},receiver_id.eq.${otherUserId}`)
-        .order('created_at', { ascending: true });
+        .or(
+          `
+            and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),
+            and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})
+          `
+        )
+        .order("created_at", { ascending: true });
 
-      if (booking_id) query = query.eq('booking_id', booking_id);
+      if (booking_id) query = query.eq("booking_id", booking_id);
 
       const { data, error } = await query;
       if (error) throw error;
 
-      return data;
+      return data || [];
     } catch (err) {
-      console.error('❌ Error fetching conversation:', err);
+      console.error("❌ Error fetching conversation:", err);
       return [];
     }
   },
 
   /**
-   * ✅ Fetch messages for a single booking
+   * LIST CONVERSATIONS FOR MESSAGES PAGE
    */
-  async fetchBookingMessages(booking_id: string) {
+  async listConversations(userId: string) {
     try {
       const { data, error } = await supabase
-        .from(MESSAGES_TABLE)
-        .select('*')
-        .eq('booking_id', booking_id)
-        .order('created_at', { ascending: true });
+        .rpc("get_conversation_list", { uid: userId });
 
       if (error) throw error;
-      return data;
+      return data || [];
     } catch (err) {
-      console.error('❌ Error fetching booking messages:', err);
+      console.error("❌ Error loading conversations:", err);
       return [];
     }
   },

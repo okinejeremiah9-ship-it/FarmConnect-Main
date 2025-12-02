@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Get booking and verify user is involved
-    const { data: booking, error: bookingError } = await supabaseClient
+    const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select('*')
       .eq('id', booking_id)
@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Update booking status
-    const { data: updatedBooking, error: updateError } = await supabaseClient
+    const { data: updatedBooking, error: updateError } = await supabase
       .from('bookings')
       .update({ status })
       .eq('id', booking_id)

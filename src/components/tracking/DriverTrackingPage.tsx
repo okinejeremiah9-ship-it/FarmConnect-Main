@@ -14,22 +14,30 @@ import {
   AlertCircle,
   CheckCircle,
 } from "lucide-react";
-    import type { Location } from "../../lib/api/trackingAPI";
+import type { Location } from "../../lib/api/trackingAPI";
 import { TrackingAPI, TrackingSession } from "../../lib/api/trackingAPI";
 
 // ✅ Props
 interface DriverTrackingPageProps {
+  sessionId?: string; // NEW: allow passing from MainApp
   onComplete?: () => void;
 }
 
-const DriverTrackingPage: React.FC<DriverTrackingPageProps> = ({ onComplete }) => {
-  const { sessionId } = useParams<{ sessionId: string }>();
+const DriverTrackingPage: React.FC<DriverTrackingPageProps> = ({
+  sessionId,
+  onComplete,
+}) => {
+  const { sessionId: paramSessionId } = useParams<{ sessionId: string }>();
+
+  // Use prop if passed, otherwise fall back to URL param
+  const effectiveSessionId = sessionId || paramSessionId || "";
+
   const [session, setSession] = useState<TrackingSession | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [locationCount, setLocationCount] = useState(0);
   const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<any>(null);
+  const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
 
@@ -37,7 +45,8 @@ const DriverTrackingPage: React.FC<DriverTrackingPageProps> = ({ onComplete }) =
   useEffect(() => {
     if ("getBattery" in navigator) {
       (navigator as any).getBattery().then((bat: any) => {
-        const updateBattery = () => setBatteryLevel(Math.round(bat.level * 100));
+        const updateBattery = () =>
+          setBatteryLevel(Math.round(bat.level * 100));
         updateBattery();
         bat.addEventListener("levelchange", updateBattery);
       });
@@ -47,8 +56,8 @@ const DriverTrackingPage: React.FC<DriverTrackingPageProps> = ({ onComplete }) =
   // 🧭 Load session details
   useEffect(() => {
     const loadSession = async () => {
-      if (!sessionId) return;
-      const data = await TrackingAPI.getSession(sessionId);
+      if (!effectiveSessionId) return;
+      const data = await TrackingAPI.getSession(effectiveSessionId);
       if (!data) {
         alert("Invalid or expired tracking session.");
         return;
@@ -56,7 +65,7 @@ const DriverTrackingPage: React.FC<DriverTrackingPageProps> = ({ onComplete }) =
       setSession(data);
     };
     loadSession();
-  }, [sessionId]);
+  }, [effectiveSessionId]);
 
   // 🛰️ Start GPS tracking
   const startTracking = async () => {
@@ -65,51 +74,51 @@ const DriverTrackingPage: React.FC<DriverTrackingPageProps> = ({ onComplete }) =
       return;
     }
 
+    if (!effectiveSessionId) {
+      alert("Missing tracking session ID.");
+      return;
+    }
+
     try {
-      await TrackingAPI.updateSessionStatus(sessionId!, "active");
+      await TrackingAPI.updateSessionStatus(effectiveSessionId, "active");
     } catch (err) {
       console.error("Failed to activate session:", err);
     }
 
+    const id = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const { latitude, longitude, accuracy, speed } = pos.coords;
 
+        // ✅ Strongly typed location object
+        const locationData: Location = {
+          session_id: effectiveSessionId,
+          latitude: latitude ?? 0,
+          longitude: longitude ?? 0,
+          accuracy: accuracy ?? 0,
+          recorded_at: new Date().toISOString(),
+          battery_level: batteryLevel ?? undefined,
+          speed: speed ?? undefined,
+        };
 
-// ...
+        // ✅ Update state
+        setCurrentLocation(locationData);
+        setError(null);
+        setLocationCount((prev) => prev + 1);
 
-const id = navigator.geolocation.watchPosition(
-  async (pos) => {
-    const { latitude, longitude, accuracy, speed } = pos.coords;
-
-    // ✅ Strongly typed location object
-    const locationData: Location = {
-      session_id: sessionId!,
-      latitude: latitude ?? 0,
-      longitude: longitude ?? 0,
-      accuracy: accuracy ?? 0,
-      recorded_at: new Date().toISOString(),
-      battery_level: batteryLevel ?? undefined,
-      speed: speed ?? undefined,
-    };
-
-    // ✅ Update state
-    setCurrentLocation(locationData);
-    setError(null);
-    setLocationCount((prev) => prev + 1);
-
-    try {
-      // ✅ Save directly to Supabase
-      await TrackingAPI.saveLocation(locationData);
-    } catch (err: any) {
-      console.error("❌ Failed to save location:", err.message || err);
-      setError("Could not update live location.");
-    }
-  },
-  (err) => {
-    console.error("GPS Error:", err);
-    setError("Please enable location permissions and ensure GPS is active.");
-  },
-  { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-);
-
+        try {
+          // ✅ Save directly to Supabase
+          await TrackingAPI.saveLocation(locationData);
+        } catch (err: any) {
+          console.error("❌ Failed to save location:", err.message || err);
+          setError("Could not update live location.");
+        }
+      },
+      (err) => {
+        console.error("GPS Error:", err);
+        setError("Please enable location permissions and ensure GPS is active.");
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+    );
 
     setWatchId(id);
     setIsTracking(true);
@@ -123,8 +132,10 @@ const id = navigator.geolocation.watchPosition(
     }
     setIsTracking(false);
 
+    if (!effectiveSessionId) return;
+
     try {
-      await TrackingAPI.updateSessionStatus(sessionId!, "paused");
+      await TrackingAPI.updateSessionStatus(effectiveSessionId, "paused");
     } catch (err) {
       console.error("Failed to pause session:", err);
     }
@@ -132,13 +143,23 @@ const id = navigator.geolocation.watchPosition(
 
   // ✅ Complete job (finish session)
   const handleComplete = async () => {
-    if (!window.confirm("Complete this job? Tracking will stop permanently.")) return;
+    if (
+      !window.confirm(
+        "Complete this job? Tracking will stop permanently."
+      )
+    )
+      return;
 
     setIsCompleting(true);
-    stopTracking();
+    await stopTracking();
 
     try {
-      await TrackingAPI.updateSessionStatus(sessionId!, "completed");
+      if (effectiveSessionId) {
+        await TrackingAPI.updateSessionStatus(
+          effectiveSessionId,
+          "completed"
+        );
+      }
       alert("Job completed successfully!");
       onComplete?.();
     } catch (err) {
@@ -208,7 +229,9 @@ const id = navigator.geolocation.watchPosition(
                 <Signal className="w-4 h-4 text-blue-600" />
                 <span className="text-xs text-blue-900">Updates Sent</span>
               </div>
-              <div className="text-xl font-bold text-blue-700">{locationCount}</div>
+              <div className="text-xl font-bold text-blue-700">
+                {locationCount}
+              </div>
             </div>
             <div className="bg-green-50 rounded-lg p-3 border border-green-200">
               <div className="flex items-center gap-2 mb-1">
@@ -226,15 +249,21 @@ const id = navigator.geolocation.watchPosition(
             <div className="bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-3 border border-green-200">
               <div className="flex items-center gap-2 mb-2">
                 <MapPin className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-semibold text-gray-800">Current Location</span>
+                <span className="text-sm font-semibold text-gray-800">
+                  Current Location
+                </span>
               </div>
               <div className="text-xs text-gray-700 space-y-1">
                 <div>Lat: {currentLocation.latitude.toFixed(6)}</div>
                 <div>Lon: {currentLocation.longitude.toFixed(6)}</div>
-                <div>Accuracy: ±{Math.round(currentLocation.accuracy)}m</div>
+                <div>
+                  Accuracy: ±{Math.round(currentLocation.accuracy)}m
+                </div>
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />{" "}
-                  {new Date(currentLocation.recorded_at).toLocaleTimeString()}
+                  {new Date(
+                    currentLocation.recorded_at
+                  ).toLocaleTimeString()}
                 </div>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';   // ⭐ ADDED useEffect
 import { useAuth } from '../../contexts/AuthContext';
 import { User, Mail, Phone, Lock, Eye, EyeOff, Loader } from 'lucide-react';
 import {
@@ -9,21 +9,36 @@ import {
 interface RegisterFormProps {
   onSwitchToLogin: () => void;
   onRegistrationSuccess: () => void;
+
+  // ⭐ ADDED — allows LoginForm to request "admin signup"
+  initialRole?: 'farmer' | 'provider' | 'admin';
 }
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ 
   onSwitchToLogin, 
-  onRegistrationSuccess 
+  onRegistrationSuccess,
+  initialRole = 'farmer' // ⭐ ADDED default
 }) => {
+
   const { register, isLoading } = useAuth();
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     password: '',
     confirmPassword: '',
-    role: 'farmer' as 'farmer' | 'provider' | 'admin',
+    role: initialRole as 'farmer' | 'provider' | 'admin',  // ⭐ ADDED
   });
+
+  // ⭐ ADDED — ensures switching from login → admin signup works
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      role: initialRole,
+    }));
+  }, [initialRole]);
+
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
@@ -82,6 +97,8 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Full Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Full Name
@@ -100,6 +117,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
             </div>
           </div>
 
+          {/* Email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Email Address
@@ -118,6 +136,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
             </div>
           </div>
 
+          {/* Phone */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Phone Number
@@ -136,6 +155,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
             </div>
           </div>
 
+          {/* Role Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Account Type
@@ -151,8 +171,26 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
               <option value="provider">Service Provider - Offer Services</option>
               <option value="admin">Admin - Manage Platform</option>
             </select>
+
+            {/* TEMPORARY — ADMIN ACCESS CHECKBOX */}
+            <div className="mt-2">
+              <label className="flex items-center gap-2 text-sm text-red-600 font-semibold">
+                <input
+                  type="checkbox"
+                  checked={formData.role === "admin"}  // ⭐ ADDED ensures checkbox matches state
+                  onChange={(e) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      role: e.target.checked ? "admin" : "farmer",
+                    }));
+                  }}
+                />
+                Make me Admin (temporary)
+              </label>
+            </div>
           </div>
 
+          {/* Password */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Password
@@ -178,6 +216,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
             </div>
           </div>
 
+          {/* Confirm */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Confirm Password

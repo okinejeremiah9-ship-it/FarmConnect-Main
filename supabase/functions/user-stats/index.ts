@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
@@ -31,7 +31,7 @@ serve(async (req) => {
     }
 
     // Verify user exists and get role
-    const { data: user, error: userError } = await supabaseClient
+    const { data: user, error: userError } = await supabase
       .from('users')
       .select('id, role')
       .eq('id', userId)
@@ -50,7 +50,7 @@ serve(async (req) => {
 
     if (user.role === 'farmer') {
       // Active Requests: count of bookings with status pending or accepted
-      const { count: activeRequestsCount, error: activeError } = await supabaseClient
+      const { count: activeRequestsCount, error: activeError } = await supabase
         .from('bookings')
         .select('*', { count: 'exact', head: true })
         .eq('farmer_id', userId)
@@ -63,7 +63,7 @@ serve(async (req) => {
       }
 
       // Completed Services: count of bookings with status completed
-      const { count: completedCount, error: completedError } = await supabaseClient
+      const { count: completedCount, error: completedError } = await supabase
         .from('bookings')
         .select('*', { count: 'exact', head: true })
         .eq('farmer_id', userId)
@@ -76,7 +76,7 @@ serve(async (req) => {
       }
 
       // Total Spent: sum of escrow_wallet amounts with status released
-      const { data: escrowData, error: escrowError } = await supabaseClient
+      const { data: escrowData, error: escrowError } = await supabase
         .from('escrow_wallet')
         .select('amount')
         .eq('farmer_id', userId)
@@ -89,7 +89,7 @@ serve(async (req) => {
       }
 
       // Services Used: count of distinct service categories from completed bookings
-      const { data: servicesData, error: servicesError } = await supabaseClient
+      const { data: servicesData, error: servicesError } = await supabase
         .from('bookings')
         .select(`
           services!inner(category)
@@ -107,7 +107,7 @@ serve(async (req) => {
       // For providers, show different stats
       
       // Active Requests: count of bookings with status pending (incoming requests)
-      const { count: activeRequestsCount, error: activeError } = await supabaseClient
+      const { count: activeRequestsCount, error: activeError } = await supabase
         .from('bookings')
         .select('*', { count: 'exact', head: true })
         .eq('provider_id', userId)
@@ -120,7 +120,7 @@ serve(async (req) => {
       }
 
       // Completed Services: count of bookings with status completed
-      const { count: completedCount, error: completedError } = await supabaseClient
+      const { count: completedCount, error: completedError } = await supabase
         .from('bookings')
         .select('*', { count: 'exact', head: true })
         .eq('provider_id', userId)
@@ -133,7 +133,7 @@ serve(async (req) => {
       }
 
       // Total Earned: sum of escrow_wallet amounts with status released
-      const { data: escrowData, error: escrowError } = await supabaseClient
+      const { data: escrowData, error: escrowError } = await supabase
         .from('escrow_wallet')
         .select('amount')
         .eq('provider_id', userId)
@@ -146,7 +146,7 @@ serve(async (req) => {
       }
 
       // Services Offered: count of active services
-      const { count: servicesCount, error: servicesError } = await supabaseClient
+      const { count: servicesCount, error: servicesError } = await supabase
         .from('services')
         .select('*', { count: 'exact', head: true })
         .eq('provider_id', userId)

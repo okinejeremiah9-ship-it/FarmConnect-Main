@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from "react";
 import { MapPin, X } from "lucide-react";
 import { useUserSession } from "../../contexts/UserSessionContext";
+import { uploadProfileImage } from "../../lib/upload"; // ✅ Added import
 
 // All available provider categories
 const SERVICE_CATEGORIES = [
@@ -67,6 +68,7 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
     service_description: user.service_description || "",
     pricing_info: user.pricing_info || "",
     years_experience: user.years_experience?.toString() || "",
+    profile_file: null as File | null, // ✅ Added
   });
 
   const [loading, setLoading] = useState(false);
@@ -127,7 +129,7 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
     setLoading(true);
 
     try {
-      const updateData = {
+      const updateData: any = {
         business_name: formData.business_name,
         contact_person: formData.contact_person,
         name: formData.contact_person,
@@ -145,6 +147,12 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
           : null,
         profile_completed: true,
       };
+
+      // ✅ STEP 3 — Upload profile picture if selected
+      if (formData.profile_file instanceof File) {
+        const url = await uploadProfileImage(formData.profile_file, user.id);
+        updateData.profile_pic = url; // Attach uploaded URL
+      }
 
       if (onSave) {
         await onSave(updateData); // parent handles save
@@ -186,6 +194,21 @@ export const ProviderProfileForm: React.FC<ProviderProfileFormProps> = ({
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-6">
+
+        {/* ✅ Profile Picture Upload (Added exactly as requested) */}
+        <div className="mb-4">
+          <label className="text-sm font-medium">Profile Picture</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) setFormData((prev) => ({ ...prev, profile_file: file }));
+            }}
+            className="block w-full mt-1 border p-2 rounded-lg"
+          />
+        </div>
+
         {/* Business Info */}
         <div className="grid md:grid-cols-2 gap-4">
           <div>

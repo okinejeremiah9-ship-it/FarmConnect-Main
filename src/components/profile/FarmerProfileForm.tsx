@@ -4,6 +4,7 @@
 import React, { useState } from "react";
 import { User, MapPin, X, Plus } from "lucide-react";
 import { useUserSession } from "../../contexts/UserSessionContext";
+import { uploadProfileImage } from "../../lib/upload"; // ✅ Added import
 
 interface FarmerProfileFormProps {
   user: any;
@@ -30,6 +31,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     crop_types: Array.isArray(user.crop_types) ? user.crop_types : [],
     num_workers:
       typeof user.num_workers === "number" ? String(user.num_workers) : "",
+    profile_file: null as File | null, // ✅ Added
   });
 
   const [newCrop, setNewCrop] = useState("");
@@ -107,7 +109,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     if (!v) return null;
     const n = Number.parseInt(v, 10);
     return Number.isNaN(n) ? null : n;
-    };
+  };
 
   // 🔹 Save and persist profile
   const handleSubmit = async (e: React.FormEvent) => {
@@ -116,6 +118,12 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
     setLoading(true);
 
     try {
+      // ✅ STEP — Upload file if selected
+      if (formData.profile_file instanceof File) {
+        const url = await uploadProfileImage(formData.profile_file, user.id);
+        formData.profile_pic = url;
+      }
+
       const normalizedCrops = Array.isArray(formData.crop_types)
         ? formData.crop_types.map((c) => String(c).trim()).filter(Boolean)
         : [];
@@ -166,30 +174,46 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        
         {/* Profile Picture */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Profile Picture URL
+            Profile Picture
           </label>
-          <div className="flex items-center space-x-4">
-            <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center">
-              {formData.profile_pic ? (
-                <img
-                  src={formData.profile_pic}
-                  alt={formData.name}
-                  className="w-20 h-20 rounded-full object-cover"
-                />
-              ) : (
-                <User className="w-10 h-10 text-gray-400" />
-              )}
-            </div>
+
+          {/* ✅ NEW BLOCK WITH FILE + URL input */}
+          <div className="flex flex-col gap-2">
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleInputChange("profile_file", file);
+              }}
+              className="border p-2 rounded-lg"
+            />
+
             <input
               type="url"
               value={formData.profile_pic}
               onChange={(e) => handleInputChange("profile_pic", e.target.value)}
-              placeholder="https://example.com/photo.jpg"
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500"
+              placeholder="or paste an image URL"
+              className="px-3 py-2 border rounded-lg"
             />
+          </div>
+
+          {/* Avatar Preview */}
+          <div className="mt-3 w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center">
+            {formData.profile_pic ? (
+              <img
+                src={formData.profile_pic}
+                alt={formData.name}
+                className="w-20 h-20 rounded-full object-cover"
+              />
+            ) : (
+              <User className="w-10 h-10 text-gray-400" />
+            )}
           </div>
         </div>
 
@@ -248,7 +272,7 @@ export const FarmerProfileForm: React.FC<FarmerProfileFormProps> = ({
           />
         </div>
 
-        {/* GPS capture */}
+        {/* GPS */}
         <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-4 flex flex-col md:flex-row items-center justify-between">
           <div>
             <p className="text-sm font-medium text-blue-900">Farm Location</p>

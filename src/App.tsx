@@ -1,7 +1,11 @@
-// --- SINGLE-ROUTER AUTH + LANDING + MAIN APP WITH ANIMATIONS --- //
+// --- CLEAN, EMAIL-BASED AUTH FLOW + REAL SUPABASE SESSION --- //
 
 import React, { useCallback, useEffect, useState } from "react";
-import { BrowserRouter as Router } from "react-router-dom";
+import { BrowserRouter as Router, useLocation } from "react-router-dom"; // ⭐ ADDED useLocation
+import { Tractor } from "lucide-react";
+
+import { supabase } from "./lib/supabase";
+import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 
 import { LoginForm } from "./components/auth/LoginForm";
 import { FarmerSignupForm } from "./components/auth/FarmerSignupForm";
@@ -9,15 +13,13 @@ import { ProviderSignupForm } from "./components/auth/ProviderSignupForm";
 import { SignupRoleSelector } from "./components/auth/SignupRoleSelector";
 import { SignupSuccessSplash } from "./components/auth/SignupSuccessSplash";
 import { WelcomeScreen } from "./components/auth/WelcomeScreen";
-import { AdminSignupPage } from "./components/auth/AdminSignupPage";
 
 import { MainApp } from "./components/MainApp";
 import { LandingPage } from "./components/LandingPage";
 import { HowItWorks } from "./components/HowItWorks";
 
-import PageTransition from "./components/ui/PageTransition"; // ⭐ ADD THIS
+import PageTransition from "./components/ui/PageTransition";
 import { normalizeUserProfile } from "./utils/profile";
-import { Tractor } from "lucide-react";
 import { registerPushSubscription } from "./lib/notifications";
 
 type AuthStep =
@@ -28,19 +30,46 @@ type AuthStep =
   | "splash"
   | "welcome";
 
+// ============================================================
+// ⭐⭐⭐ THIS IS THE ONLY UPDATE YOU REQUESTED ⭐⭐⭐
+// ============================================================
+
+const AdminSignupRouter = ({ children }: any) => {
+  const location = useLocation();
+
+  if (location.pathname === "/admin-signup") {
+    return (
+      <PageTransition keyId="admin-signup">
+        <AdminSignupPage />
+      </PageTransition>
+    );
+  }
+
+  return children;
+};
+
+// ============================================================
+// ⭐⭐⭐ END OF UPDATE ⭐⭐⭐
+// ============================================================
+
+
 const App: React.FC = () => {
+  // ================================
+  // GLOBAL AUTH / PROFILE STATE
+  // ================================
   const [user, setUser] = useState<any>(null);
+  const [session, setSession] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [authStep, setAuthStep] = useState<AuthStep>("login");
   const [showAuthFlow, setShowAuthFlow] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
 
-  const [pendingPhone, setPendingPhone] = useState("");
-  const [pendingUser, setPendingUser] = useState<any>(null);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingUser, setPendingUser] = useState<any | null>(null);
 
   // ================================
-  // USER PERSISTENCE
+  // PERSIST USER
   // ================================
   const persistUser = useCallback((raw: any | null) => {
     if (!raw) {
@@ -48,95 +77,145 @@ const App: React.FC = () => {
       localStorage.removeItem("user");
       return;
     }
+
     const normalized = normalizeUserProfile(raw);
     localStorage.setItem("user", JSON.stringify(normalized));
     setUser(normalized);
   }, []);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("user");
-    if (saved) {
-      try {
-        persistUser(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem("user");
-      }
-    }
-    setLoading(false);
-  }, [persistUser]);
-
-  const refreshProfile = async (id: string) => {
+  // ================================
+  // FETCH PROFILE
+  // ================================
+  const refreshProfile = useCallback(async (id: string) => {
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-user-profile?id=${id}`,
       {
-        headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
       }
     );
 
     const json = await response.json();
-    if (!json.success) throw new Error(json.error);
+    if (!json.success) {
+      throw new Error(json.error || "Failed to fetch user profile");
+    }
 
     return normalizeUserProfile(json.user);
-  };
+  }, []);
+
+  // ================================
+  // INITIAL AUTH BOOTSTRAP
+  // ================================
+  useEffect(() => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      const saved = localStorage.getItem("user");
+      if (saved && mounted) {
+        try {
+          setUser(JSON.parse(saved));
+        } catch {
+          localStorage.removeItem("user");
+        }
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+      setSession(session ?? null);
+
+      if (session?.user?.id) {
+        try {
+          const refreshed = await refreshProfile(session.user.id);
+          persistUser(refreshed);
+        } catch {}
+      } else {
+        persistUser(null);
+      }
+
+      setLoading(false);
+    };
+
+    initAuth();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      if (!mounted) return;
+
+      setSession(newSession ?? null);
+
+      if (newSession?.user?.id) {
+        try {
+          const profile = await refreshProfile(newSession.user.id);
+          persistUser(profile);
+        } catch {}
+      } else {
+        persistUser(null);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [refreshProfile, persistUser]);
 
   // ================================
   // LOGIN SUCCESS
   // ================================
-  const handleLoginSuccess = useCallback(
-    async (usr: any) => {
-      const refreshed = await refreshProfile(usr.id);
-      persistUser(refreshed);
-      setShowAuthFlow(false);
-    },
-    [persistUser]
-  );
+  const handleLoginSuccess = useCallback(async () => {
+    try {
+      const {
+        data: { session: liveSession },
+      } = await supabase.auth.getSession();
+
+      if (liveSession?.user?.id) {
+        const refreshed = await refreshProfile(liveSession.user.id);
+        persistUser(refreshed);
+      }
+    } catch {}
+
+    setShowAuthFlow(false);
+  }, [refreshProfile, persistUser]);
 
   // ================================
-  // SIGNUP SUCCESS → Splash
+  // SIGNUP SUCCESS
   // ================================
-  const handleSignupSuccess = useCallback((phone: string) => {
-    setPendingPhone(phone);
+  const handleSignupSuccess = useCallback((email: string) => {
+    setPendingEmail(email);
     setPendingUser(null);
     setAuthStep("splash");
     setShowAuthFlow(true);
   }, []);
 
   // ================================
-  // SPLASH COMPLETE → Fetch user
+  // SPLASH COMPLETE
   // ================================
   const handleSplashComplete = useCallback(async () => {
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-login`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            phone: pendingPhone,
-            fetch_user_only: true,
-          }),
-        }
-      );
+      const {
+        data: { session: liveSession },
+      } = await supabase.auth.getSession();
 
-      const data = await response.json();
-      if (data.success && data.user) {
-        const profile = await refreshProfile(data.user.id);
+      if (liveSession?.user?.id) {
+        const profile = await refreshProfile(liveSession.user.id);
         setPendingUser(profile);
         setAuthStep("welcome");
         return;
       }
-    } catch (err) {
-      console.error("Splash login failed:", err);
-    }
+    } catch {}
 
     setAuthStep("login");
-  }, [pendingPhone]);
+  }, [refreshProfile]);
 
   // ================================
-  // WELCOME COMPLETE → Save user
+  // WELCOME COMPLETE
   // ================================
   const handleWelcomeComplete = useCallback(() => {
     if (pendingUser) persistUser(pendingUser);
@@ -144,7 +223,7 @@ const App: React.FC = () => {
   }, [pendingUser, persistUser]);
 
   // ================================
-  // PUSH REGISTRATION
+  // PUSH NOTIFICATIONS
   // ================================
   useEffect(() => {
     if (user?.id) {
@@ -155,7 +234,10 @@ const App: React.FC = () => {
   // ================================
   // LOGOUT
   // ================================
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch {}
     persistUser(null);
     setAuthStep("login");
     setShowAuthFlow(false);
@@ -173,14 +255,20 @@ const App: React.FC = () => {
   }
 
   // ================================
-  // LOGGED-IN USER → MAIN APP
+  // USER LOGGED IN → MAIN APP
   // ================================
   if (user) {
     return (
       <Router>
-        <PageTransition keyId="main-app">
-          <MainApp user={user} onLogout={handleLogout} onUserUpdate={persistUser} />
-        </PageTransition>
+        <AdminSignupRouter>
+          <PageTransition keyId="main-app">
+            <MainApp
+              user={user}
+              onLogout={handleLogout}
+              onUserUpdate={persistUser}
+            />
+          </PageTransition>
+        </AdminSignupRouter>
       </Router>
     );
   }
@@ -190,58 +278,67 @@ const App: React.FC = () => {
   // ================================
   if (showHowItWorks) {
     return (
-      <PageTransition keyId="how-it-works">
-        <HowItWorks onBack={() => setShowHowItWorks(false)} />
-      </PageTransition>
+      <Router>
+        <AdminSignupRouter>
+          <PageTransition keyId="how-it-works">
+            <HowItWorks onBack={() => setShowHowItWorks(false)} />
+          </PageTransition>
+        </AdminSignupRouter>
+      </Router>
     );
   }
 
   // ================================
-  // AUTH FLOW (Animated)
+  // AUTH FLOW
   // ================================
   if (showAuthFlow) {
     return (
       <Router>
-        <PageTransition keyId={authStep}>
-          <div className="min-h-screen flex items-center justify-center">
-            {authStep === "login" && (
-              <LoginForm
-                onSwitchToRegister={() => setAuthStep("choose-role")}
-                onLoginSuccess={handleLoginSuccess}
-              />
-            )}
+        <AdminSignupRouter>
+          <PageTransition keyId={authStep}>
+            <div className="min-h-screen flex items-center justify-center">
+              {authStep === "login" && (
+                <LoginForm
+                  onSwitchToRegister={() => setAuthStep("choose-role")}
+                  onLoginSuccess={handleLoginSuccess}
+                />
+              )}
 
-            {authStep === "choose-role" && (
-              <SignupRoleSelector
-                onSelectFarmer={() => setAuthStep("signup-farmer")}
-                onSelectProvider={() => setAuthStep("signup-provider")}
-                onSwitchToLogin={() => setAuthStep("login")}
-              />
-            )}
+              {authStep === "choose-role" && (
+                <SignupRoleSelector
+                  onSelectFarmer={() => setAuthStep("signup-farmer")}
+                  onSelectProvider={() => setAuthStep("signup-provider")}
+                  onSwitchToLogin={() => setAuthStep("login")}
+                />
+              )}
 
-            {authStep === "signup-farmer" && (
-              <FarmerSignupForm
-                onSignupSuccess={handleSignupSuccess}
-                onSwitchToLogin={() => setAuthStep("login")}
-              />
-            )}
+              {authStep === "signup-farmer" && (
+                <FarmerSignupForm
+                  onSignupSuccess={handleSignupSuccess}
+                  onSwitchToLogin={() => setAuthStep("login")}
+                />
+              )}
 
-            {authStep === "signup-provider" && (
-              <ProviderSignupForm
-                onSignupSuccess={handleSignupSuccess}
-                onSwitchToLogin={() => setAuthStep("login")}
-              />
-            )}
+              {authStep === "signup-provider" && (
+                <ProviderSignupForm
+                  onSignupSuccess={handleSignupSuccess}
+                  onSwitchToLogin={() => setAuthStep("login")}
+                />
+              )}
 
-            {authStep === "splash" && (
-              <SignupSuccessSplash onComplete={handleSplashComplete} />
-            )}
+              {authStep === "splash" && (
+                <SignupSuccessSplash onComplete={handleSplashComplete} />
+              )}
 
-            {authStep === "welcome" && pendingUser && (
-              <WelcomeScreen user={pendingUser} onComplete={handleWelcomeComplete} />
-            )}
-          </div>
-        </PageTransition>
+              {authStep === "welcome" && pendingUser && (
+                <WelcomeScreen
+                  user={pendingUser}
+                  onComplete={handleWelcomeComplete}
+                />
+              )}
+            </div>
+          </PageTransition>
+        </AdminSignupRouter>
       </Router>
     );
   }
@@ -251,27 +348,29 @@ const App: React.FC = () => {
   // ================================
   return (
     <Router>
-      <PageTransition keyId="landing">
-        <LandingPage
-          onLogin={() => {
-            setAuthStep("login");
-            setShowAuthFlow(true);
-          }}
-          onOpenSignupRole={() => {
-            setAuthStep("choose-role");
-            setShowAuthFlow(true);
-          }}
-          onSignupFarmer={() => {
-            setAuthStep("signup-farmer");
-            setShowAuthFlow(true);
-          }}
-          onSignupProvider={() => {
-            setAuthStep("signup-provider");
-            setShowAuthFlow(true);
-          }}
-          onOpenHowItWorks={() => setShowHowItWorks(true)}
-        />
-      </PageTransition>
+      <AdminSignupRouter>
+        <PageTransition keyId="landing">
+          <LandingPage
+            onLogin={() => {
+              setAuthStep("login");
+              setShowAuthFlow(true);
+            }}
+            onOpenSignupRole={() => {
+              setAuthStep("choose-role");
+              setShowAuthFlow(true);
+            }}
+            onSignupFarmer={() => {
+              setAuthStep("signup-farmer");
+              setShowAuthFlow(true);
+            }}
+            onSignupProvider={() => {
+              setAuthStep("signup-provider");
+              setShowAuthFlow(true);
+            }}
+            onOpenHowItWorks={() => setShowHowItWorks(true)}
+          />
+        </PageTransition>
+      </AdminSignupRouter>
     </Router>
   );
 };

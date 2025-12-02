@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Verify admin role
-    const { data: admin } = await supabaseClient
+    const { data: admin } = await supabase
       .from('users')
       .select('role')
       .eq('id', admin_id)
@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Get dispute and escrow info
-    const { data: dispute, error: disputeError } = await supabaseClient
+    const { data: dispute, error: disputeError } = await supabase
       .from('disputes')
       .select('*, escrow_wallet(*)')
       .eq('id', dispute_id)
@@ -47,7 +47,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Update dispute status
-    await supabaseClient
+    await supabase
       .from('disputes')
       .update({
         status: 'resolved',
@@ -61,19 +61,19 @@ Deno.serve(async (req: Request) => {
 
     if (action === 'refund_farmer') {
       // Refund to farmer
-      await supabaseClient
+      await supabase
         .from('escrow_wallet')
         .update({ status: 'refunded' })
         .eq('id', escrow.id);
 
-      const { data: farmerWallet } = await supabaseClient
+      const { data: farmerWallet } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', escrow.farmer_id)
         .maybeSingle();
 
       if (farmerWallet) {
-        await supabaseClient
+        await supabase
           .from('wallets')
           .update({
             balance: parseFloat(farmerWallet.balance) + parseFloat(escrow.amount),
@@ -81,26 +81,26 @@ Deno.serve(async (req: Request) => {
           .eq('user_id', escrow.farmer_id);
       }
 
-      await supabaseClient
+      await supabase
         .from('bookings')
         .update({ status: 'cancelled' })
         .eq('id', escrow.booking_id);
 
     } else if (action === 'release_provider') {
       // Release to provider
-      await supabaseClient
+      await supabase
         .from('escrow_wallet')
         .update({ status: 'released' })
         .eq('id', escrow.id);
 
-      const { data: providerWallet } = await supabaseClient
+      const { data: providerWallet } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', escrow.provider_id)
         .maybeSingle();
 
       if (providerWallet) {
-        await supabaseClient
+        await supabase
           .from('wallets')
           .update({
             balance: parseFloat(providerWallet.balance) + parseFloat(escrow.amount),
@@ -109,7 +109,7 @@ Deno.serve(async (req: Request) => {
           .eq('user_id', escrow.provider_id);
       }
 
-      await supabaseClient
+      await supabase
         .from('bookings')
         .update({ status: 'completed' })
         .eq('id', escrow.booking_id);
@@ -118,20 +118,20 @@ Deno.serve(async (req: Request) => {
       // Split payment (50/50)
       const halfAmount = parseFloat(escrow.amount) / 2;
 
-      await supabaseClient
+      await supabase
         .from('escrow_wallet')
         .update({ status: 'released' })
         .eq('id', escrow.id);
 
       // Farmer gets half back
-      const { data: farmerWallet } = await supabaseClient
+      const { data: farmerWallet } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', escrow.farmer_id)
         .maybeSingle();
 
       if (farmerWallet) {
-        await supabaseClient
+        await supabase
           .from('wallets')
           .update({
             balance: parseFloat(farmerWallet.balance) + halfAmount,
@@ -140,14 +140,14 @@ Deno.serve(async (req: Request) => {
       }
 
       // Provider gets half
-      const { data: providerWallet } = await supabaseClient
+      const { data: providerWallet } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', escrow.provider_id)
         .maybeSingle();
 
       if (providerWallet) {
-        await supabaseClient
+        await supabase
           .from('wallets')
           .update({
             balance: parseFloat(providerWallet.balance) + halfAmount,
@@ -156,7 +156,7 @@ Deno.serve(async (req: Request) => {
           .eq('user_id', escrow.provider_id);
       }
 
-      await supabaseClient
+      await supabase
         .from('bookings')
         .update({ status: 'completed' })
         .eq('id', escrow.booking_id);

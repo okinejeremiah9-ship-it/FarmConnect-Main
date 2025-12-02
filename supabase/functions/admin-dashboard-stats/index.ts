@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Verify admin role
-    const { data: admin } = await supabaseClient
+    const { data: admin } = await supabase
       .from('users')
       .select('role')
       .eq('id', admin_id)
@@ -37,19 +37,19 @@ Deno.serve(async (req: Request) => {
     }
 
     // Get active bookings count
-    const { count: activeBookings } = await supabaseClient
+    const { count: activeBookings } = await supabase
       .from('bookings')
       .select('*', { count: 'exact', head: true })
       .in('status', ['pending', 'accepted', 'in-progress']);
 
     // Get completed bookings count
-    const { count: completedBookings } = await supabaseClient
+    const { count: completedBookings } = await supabase
       .from('bookings')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'completed');
 
     // Get total revenue (sum of completed escrow)
-    const { data: revenueData } = await supabaseClient
+    const { data: revenueData } = await supabase
       .from('escrow_wallet')
       .select('amount')
       .in('status', ['released', 'completed']);
@@ -57,24 +57,24 @@ Deno.serve(async (req: Request) => {
     const totalRevenue = revenueData?.reduce((sum, row) => sum + parseFloat(row.amount), 0) || 0;
 
     // Get open disputes count
-    const { count: openDisputes } = await supabaseClient
+    const { count: openDisputes } = await supabase
       .from('disputes')
       .select('*', { count: 'exact', head: true })
       .in('status', ['open', 'investigating']);
 
     // Get total users by role
-    const { count: totalFarmers } = await supabaseClient
+    const { count: totalFarmers } = await supabase
       .from('users')
       .select('*', { count: 'exact', head: true })
       .eq('role', 'farmer');
 
-    const { count: totalProviders } = await supabaseClient
+    const { count: totalProviders } = await supabase
       .from('users')
       .select('*', { count: 'exact', head: true })
       .eq('role', 'provider');
 
     // Get recent activities (last 10 bookings)
-    const { data: recentBookings } = await supabaseClient
+    const { data: recentBookings } = await supabase
       .from('bookings')
       .select('id, status, created_at, farmer:farmer_id(name), provider:provider_id(name), services(title)')
       .order('created_at', { ascending: false })

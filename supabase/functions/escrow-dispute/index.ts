@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Validate escrow exists and user is involved
-    const { data: escrow, error: escrowError } = await supabaseClient
+    const { data: escrow, error: escrowError } = await supabase
       .from('escrow_wallet')
       .select('*')
       .eq('id', escrow_id)
@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Check if dispute already exists
-    const { data: existingDispute } = await supabaseClient
+    const { data: existingDispute } = await supabase
       .from('disputes')
       .select('id')
       .eq('escrow_id', escrow_id)
@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Create dispute record
-    const { data: dispute, error: disputeError } = await supabaseClient
+    const { data: dispute, error: disputeError } = await supabase
       .from('disputes')
       .insert({
         escrow_id,
@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Update escrow status to disputed
-    await supabaseClient
+    await supabase
       .from('escrow_wallet')
       .update({
         status: 'disputed',

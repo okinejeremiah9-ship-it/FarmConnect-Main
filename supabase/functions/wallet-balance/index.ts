@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -26,7 +26,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Get or create wallet for user
-    let { data: wallet, error: walletError } = await supabaseClient
+    let { data: wallet, error: walletError } = await supabase
       .from('wallets')
       .select('*')
       .eq('user_id', userId)
@@ -38,7 +38,7 @@ Deno.serve(async (req: Request) => {
 
     // If wallet doesn't exist, create it
     if (!wallet) {
-      const { data: newWallet, error: createError } = await supabaseClient
+      const { data: newWallet, error: createError } = await supabase
         .from('wallets')
         .insert({
           user_id: userId,

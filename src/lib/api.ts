@@ -63,22 +63,38 @@ export const escrowAPI = {
 };
 
 /* ⚖️ DISPUTE API */
+/* ⚖️ DISPUTE API — FIXED */
 export const disputeAPI = {
+  /**
+   * 🔹 Admin: Get all disputes
+   */
   getAll: async (adminId: string) => {
     return fetchAPI("disputes-list", {
       method: "POST",
-      body: JSON.stringify({ admin_id: adminId }),
+      body: JSON.stringify({
+        mode: "admin",
+        admin_id: adminId,
+      }),
     });
   },
 
+  /**
+   * 🔹 User: list disputes for a farmer/provider
+   */
   listForUser: async (userId: string) => {
     return fetchAPI("disputes-list", {
       method: "POST",
-      body: JSON.stringify({ user_id: userId }),
+      body: JSON.stringify({
+        mode: "user",
+        user_id: userId,
+      }),
     });
   },
 
-  resolve: async (disputeId, adminId, resolution, action) => {
+  /**
+   * 🔹 Admin resolves a dispute
+   */
+  resolve: async (disputeId: string, adminId: string, resolution: string, action: string) => {
     return fetchAPI("dispute-resolve", {
       method: "POST",
       body: JSON.stringify({
@@ -246,6 +262,22 @@ export const mapAPI = {
     return fetchAPI(`get-nearby-services?${params.toString()}`);
   },
 };
+export const completionAPI = {
+  submit: async (bookingId: string, images: string[]) => {
+    const { data, error } = await supabase
+      .from("bookings")
+      .update({
+        status: "completed",
+        completion_images: images,
+      })
+      .eq("id", bookingId)
+      .select();
+
+    if (error) throw error;
+    return data;
+  },
+};
+
 
 /* 🧑‍💼 ADMIN API */
 export const adminAPI = {

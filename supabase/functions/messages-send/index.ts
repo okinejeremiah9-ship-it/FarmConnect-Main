@@ -13,7 +13,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -40,7 +40,7 @@ const media_url = body.media_url ?? null;
     }
 
     // Create message
-    const { data: message, error: messageError } = await supabaseClient
+    const { data: message, error: messageError } = await supabase
       .from('messages')
       .insert({
         booking_id,

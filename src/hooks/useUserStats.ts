@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect, useCallback } from "react";
+import { useUserSession } from "../contexts/UserSessionContext";
 
 interface UserStats {
   activeRequests: number;
@@ -16,13 +16,14 @@ interface UseUserStatsReturn {
 }
 
 export const useUserStats = (userId: string | undefined): UseUserStatsReturn => {
-  const { logout } = useAuth();
+  const { user } = useUserSession();  // ✅ FIX
   const [stats, setStats] = useState<UserStats>({
     activeRequests: 0,
     completedServices: 0,
     totalSpent: 0,
     servicesUsed: 0,
   });
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,35 +37,34 @@ export const useUserStats = (userId: string | undefined): UseUserStatsReturn => 
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-stats/${userId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/user-stats/${userId}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to fetch stats');
+        throw new Error(data.error || "Failed to fetch stats");
       }
 
       if (data.success && data.stats) {
         setStats(data.stats);
       }
     } catch (err) {
-      console.error('Error fetching user stats:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch stats';
-      
-      // If user not found, logout to clear invalid session
-      if (errorMessage === 'User not found') {
-        logout();
-        return;
-      }
-      
+      console.error("Error fetching user stats:", err);
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to fetch stats";
+
       setError(errorMessage);
-      // Keep default stats on error
+
+      // On error → fallback empty stats
       setStats({
         activeRequests: 0,
         completedServices: 0,

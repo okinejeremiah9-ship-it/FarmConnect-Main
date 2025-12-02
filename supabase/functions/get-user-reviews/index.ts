@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     if (!userId) throw new Error("User ID required");
 
     // Fetch profile summary
-    const { data: user, error: userError } = await supabaseClient
+    const { data: user, error: userError } = await supabase
       .from("users")
       .select("id, name, rating, total_reviews")
       .eq("id", userId)
@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     if (userError || !user) throw new Error("User not found");
 
     // Fetch reviews for user
-    const { data: reviews, error: reviewsError } = await supabaseClient
+    const { data: reviews, error: reviewsError } = await supabase
       .from("reviews")
       .select(`
         id,

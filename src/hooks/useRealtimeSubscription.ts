@@ -2,22 +2,23 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+// 🔧 UPDATED: use valid relationship/table names for embeds
 const BOOKING_SELECT = `
   *,
-  service:service_id(
+  service:services!bookings_service_id_fkey (
     id,
     title,
     category,
-    price_per_hour,
-    price_per_day,
+    price,
+    price_unit,
     cover_image
   ),
-  farmer:farmer_id(
+  farmer:users!bookings_farmer_id_fkey (
     id,
     name,
     phone
   ),
-  provider:provider_id(
+  provider:users!bookings_provider_id_fkey (
     id,
     name,
     phone
@@ -40,6 +41,7 @@ const BOOKING_SELECT = `
     )
   )
 `;
+
 
 /**
  * ✅ Realtime Chat Subscription
@@ -202,7 +204,6 @@ export function useRealtimeBookingUpdates(userId: string) {
     let channel: RealtimeChannel;
 
     if (!userId) {
-      // Skip any Supabase calls when the user context hasn't loaded yet.
       setBookings([]);
       setLoading(false);
       return () => {

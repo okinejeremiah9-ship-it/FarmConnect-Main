@@ -9,58 +9,98 @@ import { supabase } from "../../lib/supabase";
 import { useUserSession } from "../../contexts/UserSessionContext";
 import { ChatWindow } from "../chat/ChatWindow";
 import { BookingModal } from "../bookings/BookingModal";
+import { SkeletonServiceCard } from "./SkeletonServiceCard";
 
 import { MapPin, AlertTriangle, Crosshair, Search, X } from "lucide-react";
 
 // -----------------------------
-// Helpers
+// CONSTANTS
 // -----------------------------
-
 const DEFAULT_RADIUS = 50;
 
-// Parse "₵300 per hour" → { price: 300, unit: "hour" }
-const parsePriceInfo = (raw?: string | null) => {
-  if (!raw) return { price: null, unit: "session" as const };
-
-  const numMatch = raw.match(/(\d+[\.,]?\d*)/);
-  const price = numMatch ? parseFloat(numMatch[1].replace(",", "")) : null;
-
-  const lower = raw.toLowerCase();
-  let unit: "day" | "hour" | "session" | "fixed" = "session";
-
-  if (lower.includes("hour")) unit = "hour";
-  else if (lower.includes("day")) unit = "day";
-  else if (lower.includes("season") || lower.includes("project")) unit = "fixed";
-
-  return { price, unit };
-};
-
-// Simple haversine distance in km
+// -----------------------------
+// GEO HELPERS
+// -----------------------------
 const toRad = (value: number) => (value * Math.PI) / 180;
 
-const distanceKm = (
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number => {
+const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
+
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) *
       Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+      Math.sin(dLon / 2) ** 2;
+
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
 // -----------------------------
-// Component
+// OPTIMIZED MAPPER
 // -----------------------------
+const mapServiceRowToListing = (
+  row: any,
+  provider: any,
+  origin?: { lat: number; lng: number }
+): ServiceListing => {
+  const lat = row.latitude ?? null;
+  const lng = row.longitude ?? null;
 
+  const distance =
+    origin && lat != null && lng != null
+      ? distanceKm(origin.lat, origin.lng, lat, lng)
+      : null;
+
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+
+    providerName:
+      provider?.business_name ||
+      provider?.contact_person ||
+      provider?.name ||
+      "Service Provider",
+
+    providerRating: provider?.rating ?? 0,
+    totalReviews: provider?.total_reviews ?? 0,
+    role: provider?.role ?? "provider",
+
+    title: row.title,
+    description: row.description ?? row.service_description ?? null,
+
+    category: row.category,
+    specializations: row.specializations ?? [],
+
+    price: row.price,
+    priceUnit: row.price_unit,
+    pricingInfo: `${row.price} per ${row.price_unit}`,
+
+    location: row.location || provider?.location || null,
+    address: row.district ?? provider?.address ?? null,
+
+    coordinates:
+      lat != null && lng != null ? { lat: Number(lat), lng: Number(lng) } : undefined,
+
+    distanceKm: distance,
+
+    availability: row.availability ?? "available",
+
+    equipment: row.equipment ?? [],
+    images: row.images ?? [],
+
+    phone: row.phone || provider?.phone || null,
+    email: row.email || provider?.email || null,
+
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
+
+// -----------------------------
+// COMPONENT
+// -----------------------------
 export const ServiceMarketplace: React.FC = () => {
   const { user: sessionUser } = useUserSession();
 
@@ -80,16 +120,14 @@ export const ServiceMarketplace: React.FC = () => {
   } | null>(null);
 
   // Chat state
-  const [activeChatService, setActiveChatService] =
-    useState<ServiceListing | null>(null);
+  const [activeChatService, setActiveChatService] = useState<ServiceListing | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Booking state
-  const [activeBookingService, setActiveBookingService] =
-    useState<ServiceListing | null>(null);
+  const [activeBookingService, setActiveBookingService] = useState<ServiceListing | null>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
 
-  // Geolocation hook
+  // GEO HOOK
   const {
     coordinates,
     captureLocation,
@@ -99,289 +137,131 @@ export const ServiceMarketplace: React.FC = () => {
   } = useGeolocationCapture({
     enableHighAccuracy: true,
     autoSyncToSupabase: false,
-    userId: undefined,
   });
 
-  // Update userLocation when coordinates change
+  // Sync to usable location state
   useEffect(() => {
     if (coordinates) {
-      setUserLocation({
-        lat: coordinates.latitude,
-        lng: coordinates.longitude,
-      });
+      setUserLocation({ lat: coordinates.latitude, lng: coordinates.longitude });
       setLocationError(null);
     }
   }, [coordinates]);
 
-  // Decide if row has services
-  const rowHasServices = (row: any): boolean => {
-    const categories = Array.isArray(row.service_categories)
-      ? row.service_categories
-      : [];
-    const servicesOffered = Array.isArray(row.services_offered)
-      ? row.services_offered
-      : [];
-    return (
-      categories.length > 0 ||
-      servicesOffered.length > 0 ||
-      (row.service_description && row.service_description.trim().length > 0)
-    );
-  };
-
-  // Map DB row → ServiceListing
-  const mapRowToListing = (
-    row: any,
-    origin?: { lat: number; lng: number }
-  ): ServiceListing | null => {
-    // Skip farmers with no services
-    if (row.role === "farmer" && !rowHasServices(row)) {
-      return null;
-    }
-
-    const categories: string[] = Array.isArray(row.service_categories)
-      ? row.service_categories
-      : [];
-
-    const servicesOffered: string[] = Array.isArray(row.services_offered)
-      ? row.services_offered
-      : [];
-
-    const { price, unit } = parsePriceInfo(row.pricing_info);
-
-    const lat =
-      typeof row.latitude === "number"
-        ? row.latitude
-        : row.latitude != null
-        ? parseFloat(String(row.latitude))
-        : null;
-
-    const lng =
-      typeof row.longitude === "number"
-        ? row.longitude
-        : row.longitude != null
-        ? parseFloat(String(row.longitude))
-        : null;
-
-    let dist: number | null = null;
-    if (origin && lat != null && lng != null) {
-      dist = distanceKm(origin.lat, origin.lng, lat, lng);
-    }
-
-    const rating =
-      typeof row.rating === "number"
-        ? row.rating
-        : row.rating != null
-        ? parseFloat(String(row.rating))
-        : 0;
-
-    const allSpecs = [...categories, ...servicesOffered];
-
-    return {
-      id: row.id,
-      providerId: row.id,
-      providerName:
-        row.business_name ||
-        row.contact_person ||
-        row.name ||
-        "Service Provider",
-      providerRating: rating,
-      totalReviews: row.total_reviews ?? 0,
-      role: row.role,
-
-      title:
-        row.business_name ||
-        (allSpecs.length > 0 ? allSpecs.join(", ") : "Service"),
-      description: row.service_description ?? row.bio ?? null,
-
-      category: allSpecs[0] ?? null,
-      specializations: allSpecs.length > 0 ? allSpecs : undefined,
-
-      price,
-      priceUnit: unit,
-      pricingInfo: row.pricing_info ?? null,
-
-      location: row.location ?? null,
-      address: row.address ?? null,
-
-      coordinates: lat != null && lng != null ? { lat, lng } : undefined,
-      distanceKm: dist,
-
-      availability: row.service_availability ?? undefined,
-
-      equipment: Array.isArray(row.equipment_list)
-        ? row.equipment_list
-        : undefined,
-
-      phone: row.phone ?? null,
-      email: row.email ?? null,
-
-      createdAt: row.created_at ?? undefined,
-      updatedAt: row.updated_at ?? undefined,
-    };
-  };
-
-  // Fetch providers & service-offering farmers from Supabase
+  // -----------------------------
+  // FETCH SERVICES + PROVIDERS
+  // -----------------------------
   const fetchListings = async () => {
     if (!userLocation) {
-      setLocationError(
-        "Location is required. Tap 'Use Current Location' to load nearby services."
-      );
+      setLocationError("Location is required. Tap 'Use Current Location'.");
       return;
     }
 
     setLoading(true);
-    setLocationError(null);
 
     try {
-      const { data, error } = await supabase
-        .from("users")
-        .select(
-          `
-          id,
-          name,
-          email,
-          phone,
-          role,
-          location,
-          rating,
-          total_reviews,
-          is_verified,
-          created_at,
-          updated_at,
-          bio,
-          profile_pic,
-          latitude,
-          longitude,
-          address,
-          business_name,
-          contact_person,
-          service_categories,
-          service_description,
-          service_availability,
-          pricing_info,
-          services_offered,
-          equipment_list
-        `
-        )
-        .in("role", ["provider", "farmer"])
-        .eq("profile_completed", true);
+      // 1. Load services table
+      const { data: serviceRows, error: servicesError } = await supabase
+        .from("services")
+        .select("*")
+        .eq("availability", "available");
 
-      if (error) {
-        console.error("Error fetching providers:", error.message);
-        throw new Error(error.message);
+      if (servicesError) throw new Error(servicesError.message);
+      if (!serviceRows || serviceRows.length === 0) {
+        setAllListings([]);
+        return;
       }
 
-      const rows = data ?? [];
+      // 2. Collect provider IDs
+      const providerIds = Array.from(
+        new Set(serviceRows.map((s) => s.provider_id).filter(Boolean))
+      );
 
-      const mapped: ServiceListing[] = rows
-        .map((row) => mapRowToListing(row, userLocation))
-        .filter((x): x is ServiceListing => x !== null);
+      // 3. Load provider profiles
+      const providerMap = new Map();
+      if (providerIds.length > 0) {
+        const { data: providerRows, error: providerError } = await supabase
+          .from("users")
+          .select("*")
+          .in("id", providerIds);
+
+        if (providerError) throw new Error(providerError.message);
+
+        providerRows?.forEach((p) => providerMap.set(p.id, p));
+      }
+
+      // 4. Merge into ServiceListing[]
+      const mapped = serviceRows.map((service) =>
+        mapServiceRowToListing(service, providerMap.get(service.provider_id), userLocation)
+      );
 
       setAllListings(mapped);
     } catch (err: any) {
-      console.error("Marketplace load error:", err);
-      setLocationError(err.message || "Failed to load services.");
+      console.error("Error loading services:", err);
+      setLocationError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch when we first have a location
   useEffect(() => {
-    if (userLocation) {
-      fetchListings();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (userLocation) fetchListings();
   }, [userLocation]);
 
-  // Full filtered + searched list
+  // -----------------------------
+  // FILTER + SEARCH + SORT
+  // -----------------------------
   const filteredListings = useMemo(() => {
     let list = [...allListings];
 
-    // 1) distance
     if (filters.radiusKm && userLocation) {
-      list = list.filter((s) => {
-        if (s.distanceKm == null) return false;
-        return s.distanceKm <= filters.radiusKm;
-      });
+      list = list.filter((s) => s.distanceKm != null && s.distanceKm <= filters.radiusKm);
     }
 
-    // 2) categories
-    if (filters.categories && filters.categories.length > 0) {
-      list = list.filter((s) => {
-        const specs = s.specializations ?? [];
-        return specs.some((spec) => filters.categories!.includes(spec));
-      });
+    if (filters.categories?.length) {
+      list = list.filter((s) =>
+        [s.category, ...(s.specializations || [])].some((c) =>
+          filters.categories.includes(c || "")
+        )
+      );
     }
 
-    // 3) rating
     if (filters.minRating && filters.minRating > 0) {
-      list = list.filter(
-        (s) => (s.providerRating ?? 0) >= filters.minRating!
-      );
+      list = list.filter((s) => (s.providerRating ?? 0) >= filters.minRating!);
     }
 
-    // 4) price range
-    if (filters.minPrice != null) {
-      list = list.filter(
-        (s) => s.price == null || s.price >= filters.minPrice!
-      );
-    }
-    if (filters.maxPrice != null) {
-      list = list.filter(
-        (s) => s.price == null || s.price <= filters.maxPrice!
-      );
-    }
-
-    // 5) search
     const q = search.trim().toLowerCase();
     if (q) {
       list = list.filter((s) => {
-        const fields: string[] = [
+        const fields = [
           s.title,
           s.description || "",
           s.providerName,
           s.location || "",
           s.address || "",
-          s.pricingInfo || "",
+          s.category || "",
           ...(s.specializations ?? []),
-        ].map((v) => v.toLowerCase());
+        ].map((x) => x.toLowerCase());
 
         return fields.some((f) => f.includes(q));
       });
     }
 
-    // 6) sort: nearest -> highest rating
     list.sort((a, b) => {
       const da = a.distanceKm ?? Infinity;
       const db = b.distanceKm ?? Infinity;
 
       if (da !== db) return da - db;
-
-      const ra = a.providerRating ?? 0;
-      const rb = b.providerRating ?? 0;
-      return rb - ra;
+      return (b.providerRating ?? 0) - (a.providerRating ?? 0);
     });
 
     return list;
   }, [allListings, filters, search, userLocation]);
 
-  const locationSummary = useMemo(() => {
-    if (!userLocation) return null;
-    const latStr = userLocation.lat.toFixed(4);
-    const lngStr = userLocation.lng.toFixed(4);
-    return `Showing providers within ${filters.radiusKm} km of (${latStr}, ${lngStr})`;
-  }, [userLocation, filters.radiusKm]);
-
   // -----------------------------
-  // Chat handlers
+  // CHAT
   // -----------------------------
-
   const handleMessageProvider = (service: ServiceListing) => {
-    if (!sessionUser) {
-      alert("You must be logged in to send messages.");
-      return;
-    }
+    if (!sessionUser) return alert("Log in to send a message.");
     setActiveChatService(service);
     setIsChatOpen(true);
   };
@@ -392,20 +272,11 @@ export const ServiceMarketplace: React.FC = () => {
   };
 
   // -----------------------------
-  // Booking handlers
+  // BOOKING
   // -----------------------------
-
   const openBookingModal = (service: ServiceListing) => {
-    if (!sessionUser) {
-      alert("You must be logged in to book a service.");
-      return;
-    }
-
-    if (sessionUser.role !== "farmer") {
-      alert("Only farmers can book services.");
-      return;
-    }
-
+    if (!sessionUser) return alert("Log in to book a service.");
+    if (sessionUser.role !== "farmer") return alert("Only farmers can book services.");
     setActiveBookingService(service);
     setIsBookingOpen(true);
   };
@@ -416,43 +287,36 @@ export const ServiceMarketplace: React.FC = () => {
   };
 
   // -----------------------------
-  // Render
+  // UI
   // -----------------------------
+  const locationSummary =
+    userLocation &&
+    `Showing providers within ${filters.radiusKm} km of (${userLocation.lat.toFixed(
+      4
+    )}, ${userLocation.lng.toFixed(4)})`;
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-            Service Marketplace
-          </h1>
-          <p className="text-sm text-gray-600">
-            Find trusted agricultural services near your farm.
-          </p>
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <h1 className="text-xl font-bold">Service Marketplace</h1>
+          <p className="text-sm text-gray-600">Find trusted agricultural services near you.</p>
 
-          {/* Location summary + status */}
           <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div className="flex items-center text-xs text-gray-500">
               <MapPin className="w-4 h-4 text-green-600 mr-1" />
-              {locationSummary ? (
-                <span>{locationSummary}</span>
-              ) : (
-                <span>Location not set yet.</span>
-              )}
+              {locationSummary || "Location not set."}
             </div>
 
             <div className="flex items-center gap-3">
-              {geoStatus && (
-                <span className="text-[11px] text-blue-500">{geoStatus}</span>
-              )}
-              {geoError && (
-                <span className="text-[11px] text-red-500">{geoError}</span>
-              )}
+              {geoStatus && <span className="text-[11px] text-blue-500">{geoStatus}</span>}
+              {geoError && <span className="text-[11px] text-red-500">{geoError}</span>}
+
               <button
                 onClick={captureLocation}
                 disabled={isCapturing}
-                className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400"
+                className="inline-flex items-center px-3 py-1.5 text-xs bg-green-600 text-white rounded-md"
               >
                 <Crosshair className="w-4 h-4 mr-1" />
                 {isCapturing ? "Capturing…" : "Use Current Location"}
@@ -463,22 +327,16 @@ export const ServiceMarketplace: React.FC = () => {
       </div>
 
       {/* Body */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
-        {/* Error banner */}
+      <div className="max-w-7xl mx-auto px-4 pb-10">
         {locationError && (
-          <div className="mt-4 bg-red-50 border border-red-200 px-4 py-3 text-red-700 rounded-lg flex items-start text-sm">
+          <div className="mt-4 bg-red-50 border border-red-200 px-4 py-3 text-red-700 rounded-lg text-sm flex items-start">
             <AlertTriangle className="w-5 h-5 mr-2 mt-0.5" />
-            <span>{locationError}</span>
+            {locationError}
           </div>
         )}
 
-        {/* Filters */}
-        <ServiceFiltersComponent
-          filters={filters}
-          onFiltersChange={setFilters}
-        />
+        <ServiceFiltersComponent filters={filters} onFiltersChange={setFilters} />
 
-        {/* Search bar */}
         <div className="mt-4">
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
@@ -486,69 +344,72 @@ export const ServiceMarketplace: React.FC = () => {
             </span>
             <input
               type="text"
-              placeholder="Search by service, provider, location…"
+              placeholder="Search by service, provider, or location…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+              className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg"
             />
           </div>
         </div>
 
-        {/* Results grid */}
-        <div className="mt-6">
-          {loading ? (
-            <p className="text-sm text-gray-600">Loading nearby services…</p>
-          ) : filteredListings.length === 0 ? (
-            <p className="text-sm text-gray-600">
-              No services found for your filters. Try increasing the radius
-              or clearing some filters.
-            </p>
-          ) : (
-            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredListings.map((service) => (
-                <ServiceCard
-                  key={service.id}
-                  service={service}
-                  onMessageProvider={handleMessageProvider}
-                  onBookService={openBookingModal}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+{/* Results grid */}
+<div className="mt-6">
+  {loading ? (
+    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <SkeletonServiceCard key={i} />
+      ))}
+    </div>
+  ) : filteredListings.length === 0 ? (
+    <p className="text-sm text-gray-600">
+      No services found for your filters. Try increasing the area radius or clearing some filters.
+    </p>
+  ) : (
+    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {filteredListings.map((service) => (
+        <ServiceCard
+          key={service.id}
+          service={service}
+          onMessageProvider={handleMessageProvider}
+          onBookService={openBookingModal}
+        />
+      ))}
+    </div>
+  )}
+</div>
+
       </div>
 
-      {/* Chat Modal */}
-      {isChatOpen && activeChatService && sessionUser && (
+      {/* Chat */}
+      {isChatOpen && activeChatService && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40 px-2">
           <div className="w-full max-w-lg h-[80vh] bg-white rounded-xl shadow-xl flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <div>
                 <p className="text-xs text-gray-500">Messaging</p>
-                <h2 className="text-sm font-semibold text-gray-900">
-                  {activeChatService.providerName}
-                </h2>
+                <h2 className="text-sm font-semibold">{activeChatService.providerName}</h2>
               </div>
-              <button
-                onClick={handleCloseChat}
-                className="p-1 rounded-full hover:bg-gray-100"
-              >
+              <button onClick={handleCloseChat} className="p-1 rounded-full hover:bg-gray-100">
                 <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
+
             <div className="flex-1">
-              <ChatWindow
-                bookingId={undefined} // direct provider chat
-                userId={sessionUser.id}
-                otherUserId={activeChatService.providerId}
-                otherUserName={activeChatService.providerName}
-              />
+            <ChatWindow
+  bookingId={undefined}
+  userId={sessionUser.id}
+  otherUserId={activeChatService.providerId}
+  otherUserName={activeChatService.providerName}
+  canBookFromChat
+  onBookFromChat={() => openBookingModal(activeChatService)}
+/>
+
             </div>
           </div>
         </div>
       )}
 
-      {/* Booking Modal */}
+      {/* Booking */}
       {isBookingOpen && activeBookingService && (
         <BookingModal
           service={activeBookingService}

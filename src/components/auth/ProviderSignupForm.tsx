@@ -1,32 +1,23 @@
+// src/components/auth/ProviderSignupForm.tsx
+
 import React, { useState } from "react";
 import {
-  Building,
   User,
   Phone,
   Mail,
   MapPin,
-  Tags,
-  ClipboardList,
-  Wallet,
-  Briefcase,
-  Lock,
+  Check,
+  X,
   Eye,
   EyeOff,
   Loader,
   ArrowLeft,
   ChevronDown,
-  Check,
-  X,
 } from "lucide-react";
-
-import {
-  normalizeGhanaPhoneNumber,
-  isValidGhanaPhoneNumber,
-} from "../../utils/phone";
 
 import { useGeolocationCapture } from "../../hooks/useGeolocationCapture";
 
-// FIXED SERVICE CATEGORIES (SYSTEM-WIDE)
+// FIXED SERVICE CATEGORIES (UI labels)
 const SERVICE_CATEGORIES = [
   "Tractor Operator",
   "Mechanic",
@@ -46,9 +37,71 @@ const SERVICE_CATEGORIES = [
   "Drivers",
 ];
 
+// ⬇️ Allowed service.category values in DB:
+// 'machinery' | 'mechanic' | 'extension' | 'labour'
+type ServiceCategoryEnum = "machinery" | "mechanic" | "extension" | "labour";
+
+// Map UI category → DB enum-safe category
+function mapUiCategoryToDbCategory(label: string): ServiceCategoryEnum {
+  const lower = label.toLowerCase();
+
+  if (
+    lower.includes("tractor") ||
+    lower.includes("equipment") ||
+    lower.includes("plough") ||
+    lower.includes("harvest") ||
+    lower.includes("drone")
+  ) {
+    return "machinery";
+  }
+
+  if (lower.includes("mechanic")) {
+    return "mechanic";
+  }
+
+  if (
+    lower.includes("soil") ||
+    lower.includes("testing") ||
+    lower.includes("consult") ||
+    lower.includes("extension") ||
+    lower.includes("irrigation") ||
+    lower.includes("pesticide") ||
+    lower.includes("seed") ||
+    lower.includes("fertilizer") ||
+    lower.includes("storage") ||
+    lower.includes("warehous")
+  ) {
+    return "extension";
+  }
+
+  // Drivers, labour-type work, logistics etc.
+  return "labour";
+}
+
+// Rough price + unit parser from free text like "GHS 200 per day"
+function parsePriceAndUnit(raw?: string | null): {
+  price: number | null;
+  unit: "hour" | "day" | "session" | "fixed";
+} {
+  if (!raw) return { price: null, unit: "session" };
+
+  const text = raw.toLowerCase();
+  const numMatch = raw.match(/(\d+[\.,]?\d*)/);
+  const price = numMatch ? parseFloat(numMatch[1].replace(",", "")) : null;
+
+  let unit: "hour" | "day" | "session" | "fixed" = "session";
+  if (text.includes("hour")) unit = "hour";
+  else if (text.includes("day")) unit = "day";
+  else if (text.includes("season") || text.includes("project") || text.includes("fixed")) {
+    unit = "fixed";
+  }
+
+  return { price, unit };
+}
+
 interface ProviderSignupFormProps {
   onSwitchToLogin: () => void;
-  onSignupSuccess: (phone: string) => void;
+  onSignupSuccess: (email: string) => void;
 }
 
 export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
@@ -74,41 +127,38 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
   const {
     coordinates,
     error: locationError,
-    captureLocation,
     isCapturing,
+    captureLocation,
   } = useGeolocationCapture();
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  // Input change handler
+  // Handle input
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  // Toggle category select
+  // Toggle service category
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
-      prev.includes(cat)
-        ? prev.filter((c) => c !== cat)
-        : [...prev, cat]
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
     );
   };
 
+  // ------------------------------------------------------
+  // SUBMIT (EMAIL + PASSWORD AUTH + INITIAL SERVICES)
+  // ------------------------------------------------------
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!isValidGhanaPhoneNumber(formData.phone)) {
-      return setError("Enter a valid Ghana phone number.");
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      return setError("Passwords do not match.");
+    if (!formData.email || !formData.email.includes("@")) {
+      return setError("Enter a valid email address.");
     }
 
     if (!coordinates) {
@@ -119,11 +169,38 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
       return setError("Select at least one service category.");
     }
 
-    const normalizedPhone = normalizeGhanaPhoneNumber(formData.phone);
+    if (formData.password !== formData.confirmPassword) {
+      return setError("Passwords do not match.");
+    }
 
     setLoading(true);
 
     try {
+      const { price, unit } = parsePriceAndUnit(formData.pricingInfo);
+
+      // 👇 Build initial services payload for the `services` table
+      const initialServices = selectedCategories.map((catLabel) => {
+        const dbCategory = mapUiCategoryToDbCategory(catLabel);
+
+        return {
+          // provider_id will be filled in the Edge Function using the new user's id
+          category: dbCategory, // enum-safe
+          title: `${catLabel} - ${formData.businessName || "Service"}`,
+          description:
+            formData.serviceDescription ||
+            `${catLabel} services provided by ${formData.businessName}`,
+          price: price ?? 0,
+          price_unit: unit, // 'hour' | 'day' | 'session' | 'fixed'
+          availability: "available",
+          location: formData.address,
+          district: null,
+          equipment: null,
+          specializations: [catLabel],
+          images: [],
+        };
+      });
+
+      // call Edge Function using EMAIL + PASSWORD auth
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth-signup`,
         {
@@ -135,40 +212,39 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
           body: JSON.stringify({
             role: "provider",
 
-            // Required fields
-            name: formData.contactPerson,
-            contact_person: formData.contactPerson,
-            business_name: formData.businessName,
-
-            email: formData.email || null,
-            phone: normalizedPhone,
+            // auth-signup uses email now
+            email: formData.email,
             password: formData.password,
 
+            // profile fields (still stored in users for now)
+            name: formData.contactPerson,
+            business_name: formData.businessName,
+            contact_person: formData.contactPerson,
+            phone: formData.phone || null,
             address: formData.address,
             latitude: coordinates.latitude,
             longitude: coordinates.longitude,
-
             pricing_info: formData.pricingInfo || null,
             service_description: formData.serviceDescription || null,
             years_experience: formData.yearsExperience
               ? parseInt(formData.yearsExperience)
               : null,
-
-            // FIXED
             service_categories: selectedCategories,
-
             profile_completed: true,
+
+            // 💥 NEW: initial services to be inserted into public.services
+            initial_services: initialServices,
           }),
         }
       );
 
       const json = await response.json();
-
       if (!response.ok || !json.success) {
         throw new Error(json.error || "Signup failed.");
       }
 
-      onSignupSuccess(normalizedPhone);
+      // return email instead of phone
+      onSignupSuccess(formData.email);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Signup failed.");
@@ -177,11 +253,10 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
     }
   };
 
+  // --- UI (unchanged) ---
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-6">
       <div className="w-full max-w-3xl bg-white shadow-xl rounded-2xl border border-blue-100 p-10 animate-fade-in">
-
-        {/* Back Button */}
         <button
           onClick={onSwitchToLogin}
           className="flex items-center text-gray-600 hover:text-blue-600 mb-6"
@@ -189,14 +264,15 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
           <ArrowLeft className="w-4 h-4 mr-2" /> Back to login
         </button>
 
-        {/* Header */}
         <div className="text-center mb-8">
           <span className="px-4 py-1 rounded-full bg-blue-100 text-blue-700 text-sm">
             Provider Onboarding
           </span>
-          <h1 className="text-3xl font-bold mt-4">Tell farmers about your services</h1>
-          <p className="text-gray-600 mt-2">
-            Your business details help farmers trust and book you confidently.
+          <h1 className="text-3xl font-bold mt-4">
+            Tell farmers about your services
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Your business details help farmers book confidently.
           </p>
         </div>
 
@@ -206,85 +282,86 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
           </div>
         )}
 
-        {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-6">
-
-          {/* Business Name + Contact Person */}
+          {/* Business name & contact person */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <label className="font-medium text-gray-700">Business Name *</label>
+              <label className="font-medium text-gray-700">
+                Business Name *
+              </label>
               <input
                 type="text"
                 name="businessName"
                 value={formData.businessName}
                 onChange={handleChange}
                 className="w-full border p-3 rounded-lg"
-                placeholder="AgriTech Services"
                 required
               />
             </div>
 
             <div>
-              <label className="font-medium text-gray-700">Contact Person *</label>
+              <label className="font-medium text-gray-700">
+                Contact Person *
+              </label>
               <input
                 type="text"
                 name="contactPerson"
                 value={formData.contactPerson}
                 onChange={handleChange}
                 className="w-full border p-3 rounded-lg"
-                placeholder="Kofi Mensah"
                 required
               />
             </div>
           </div>
 
-          {/* Email + Phone */}
+          {/* Email + phone */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <label className="font-medium text-gray-700">Email</label>
+              <label className="font-medium text-gray-700">Email *</label>
               <input
                 type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 className="w-full border p-3 rounded-lg"
-                placeholder="example@gmail.com"
+                required
               />
             </div>
 
             <div>
-              <label className="font-medium text-gray-700">Phone Number *</label>
+              <label className="font-medium text-gray-700">Phone Number</label>
               <input
                 type="tel"
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
                 className="w-full border p-3 rounded-lg"
-                placeholder="+233XXXXXXXXX"
-                required
               />
             </div>
           </div>
 
-          {/* Business Address */}
+          {/* address */}
           <div>
-            <label className="font-medium text-gray-700">Business Location *</label>
+            <label className="font-medium text-gray-700">
+              Business Location *
+            </label>
             <input
               type="text"
               name="address"
               value={formData.address}
               onChange={handleChange}
               className="w-full border p-3 rounded-lg"
-              placeholder="City, district"
               required
             />
           </div>
 
-          {/* Capture Location */}
+          {/* GPS capture */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="font-medium text-blue-700">Service Discovery Location *</p>
+            <p className="font-medium text-blue-700">
+              Service Discovery Location *
+            </p>
             <p className="text-sm text-blue-600 mb-3">
-              Capture your current location so farmers within your service radius can find you.
+              Capture your current GPS location.
             </p>
 
             <button
@@ -300,36 +377,41 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                 ✓ Location captured successfully
               </p>
             )}
+            {locationError && (
+              <p className="text-red-600 text-sm mt-2">{locationError}</p>
+            )}
           </div>
 
-          {/* Service Categories MULTI SELECT */}
+          {/* categories */}
           <div>
-            <label className="font-medium text-gray-700">Service Categories *</label>
+            <label className="font-medium text-gray-700">
+              Service Categories *
+            </label>
 
             <div className="relative">
               <button
                 type="button"
-                className="w-full border p-3 rounded-lg flex items-center justify-between"
+                className="w-full border p-3 rounded-lg flex justify-between items-center"
                 onClick={() => setDropdownOpen((prev) => !prev)}
               >
                 <span className="text-gray-600">
                   {selectedCategories.length > 0
                     ? `${selectedCategories.length} selected`
-                    : "Select service categories"}
+                    : "Select categories"}
                 </span>
                 <ChevronDown className="w-5 h-5 text-gray-400" />
               </button>
 
               {dropdownOpen && (
-                <div className="absolute z-20 mt-2 bg-white shadow-lg border rounded-lg w-full max-h-64 overflow-y-auto p-2">
+                <div className="absolute z-20 bg-white border shadow-lg rounded-lg w-full mt-2 p-2 max-h-64 overflow-y-auto">
                   {SERVICE_CATEGORIES.map((cat) => (
                     <div
                       key={cat}
                       onClick={() => toggleCategory(cat)}
-                      className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                      className="flex items-center p-2 hover:bg-gray-100 cursor-pointer rounded"
                     >
                       <div
-                        className={`w-5 h-5 border rounded mr-3 flex items-center justify-center ${
+                        className={`w-5 h-5 border rounded flex items-center justify-center mr-3 ${
                           selectedCategories.includes(cat)
                             ? "bg-blue-600 border-blue-600"
                             : "border-gray-300"
@@ -339,14 +421,14 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                           <Check className="text-white w-4 h-4" />
                         )}
                       </div>
-                      <span className="text-gray-700">{cat}</span>
+                      <span>{cat}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Selected pills */}
+            {/* selected category pills */}
             <div className="flex flex-wrap gap-2 mt-3">
               {selectedCategories.map((cat) => (
                 <span
@@ -363,22 +445,26 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
             </div>
           </div>
 
-          {/* Description */}
+          {/* descriptions */}
           <div>
-            <label className="font-medium text-gray-700">Service Description</label>
+            <label className="font-medium text-gray-700">
+              Service Description
+            </label>
             <textarea
               name="serviceDescription"
               value={formData.serviceDescription}
               onChange={handleChange}
-              className="w-full border p-3 rounded-lg"
               rows={3}
+              className="w-full border p-3 rounded-lg"
             />
           </div>
 
-          {/* Years + Pricing */}
+          {/* experience + pricing */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <label className="font-medium text-gray-700">Years of Experience</label>
+              <label className="font-medium text-gray-700">
+                Years of Experience
+              </label>
               <input
                 type="number"
                 name="yearsExperience"
@@ -397,12 +483,12 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                 value={formData.pricingInfo}
                 onChange={handleChange}
                 className="w-full border p-3 rounded-lg"
-                placeholder="GHS 200 per acre"
+                placeholder="GHS 200 per day"
               />
             </div>
           </div>
 
-          {/* Password */}
+          {/* password */}
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <label className="font-medium text-gray-700">Password *</label>
@@ -412,12 +498,11 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  className="w-full border p-3 rounded-lg pr-10"
-                  placeholder="Enter password"
                   required
+                  className="w-full border p-3 rounded-lg pr-10"
                 />
                 <span
-                  className="absolute right-3 top-3 text-gray-500 cursor-pointer"
+                  className="absolute right-3 top-3 cursor-pointer text-gray-500"
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? <EyeOff /> : <Eye />}
@@ -426,20 +511,23 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
             </div>
 
             <div>
-              <label className="font-medium text-gray-700">Confirm Password *</label>
+              <label className="font-medium text-gray-700">
+                Confirm Password *
+              </label>
               <div className="relative">
                 <input
                   type={showConfirmPassword ? "text" : "password"}
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="w-full border p-3 rounded-lg pr-10"
-                  placeholder="Re-enter password"
                   required
+                  className="w-full border p-3 rounded-lg pr-10"
                 />
                 <span
-                  className="absolute right-3 top-3 text-gray-500 cursor-pointer"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-3 cursor-pointer text-gray-500"
+                  onClick={() =>
+                    setShowConfirmPassword(!showConfirmPassword)
+                  }
                 >
                   {showConfirmPassword ? <EyeOff /> : <Eye />}
                 </span>
@@ -447,27 +535,27 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
             </div>
           </div>
 
-          {/* Submit button */}
+          {/* submit */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 flex items-center justify-center"
+            className="w-full py-4 bg-blue-600 text-white rounded-lg font-semibold flex justify-center"
           >
             {loading ? (
               <>
-                <Loader className="animate-spin w-5 h-5 mr-2" /> Creating account...
+                <Loader className="animate-spin w-5 h-5 mr-2" />
+                Creating account...
               </>
             ) : (
               "Create Provider Account"
             )}
           </button>
 
-          {/* Back to login */}
-          <div className="text-center mt-4">
+          <div className="text-center mt-3">
             <button
               type="button"
               onClick={onSwitchToLogin}
-              className="text-blue-600 font-medium hover:underline"
+              className="text-blue-600 hover:underline"
             >
               Back to Login
             </button>
@@ -475,15 +563,17 @@ export const ProviderSignupForm: React.FC<ProviderSignupFormProps> = ({
         </form>
       </div>
 
-      <style>{`
-        @keyframes fade-in-up {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in-up 0.4s ease-out;
-        }
-      `}</style>
+      <style>
+        {`
+          @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .animate-fade-in {
+            animation: fade-in-up 0.35s ease-out;
+          }
+        `}
+      </style>
     </div>
   );
 };

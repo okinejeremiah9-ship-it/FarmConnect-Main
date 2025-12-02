@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Star, User, Calendar } from "lucide-react";
-import { supabase } from "../../lib/supabaseClient";
+import { supabase } from "../../lib/supabase";
 
 interface Review {
   id: string;

@@ -1,15 +1,27 @@
+// src/components/chat/ChatWindow.tsx
+
 import React, { useState, useRef, useEffect } from "react";
 import { Send, Mic, MicOff, Image as ImageIcon, Play, Pause } from "lucide-react";
 
 import { messagesAPI } from "../../lib/api";
 import { uploadFile, STORAGE_BUCKETS } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase";
+
 import { useRealtimeMessages } from "../../hooks/useRealtimeSubscription";
 
+// -----------------------------
+// Types
+// -----------------------------
+
 interface ChatWindowProps {
-  bookingId?: string | null;
-  userId: string;
-  otherUserId: string;
-  otherUserName?: string; // 👈 made optional
+  bookingId?: string | null; // optional, for booking-specific chats
+  userId: string; // current logged-in user
+  otherUserId: string; // the person you're chatting with
+  otherUserName?: string; // optional display name
+
+  // NEW (optional): enable booking button from parent
+  canBookFromChat?: boolean;
+  onBookFromChat?: () => void;
 }
 
 interface Message {
@@ -23,11 +35,17 @@ interface Message {
   created_at: string;
 }
 
+// -----------------------------
+// Component
+// -----------------------------
+
 export const ChatWindow: React.FC<ChatWindowProps> = ({
   bookingId = null,
   userId,
   otherUserId,
   otherUserName,
+  canBookFromChat,
+  onBookFromChat,
 }) => {
   const [messageText, setMessageText] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -39,21 +57,23 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { messages, loading }: { messages: Message[]; loading: boolean } =
-    useRealtimeMessages(userId, otherUserId, bookingId);
+    useRealtimeMessages(userId, otherUserId, bookingId ?? null);
 
+  // Scroll to bottom whenever messages change
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [messages]);
 
   // ------------------------------------------------------------------
   // 🎙️ AUDIO RECORDING
   // ------------------------------------------------------------------
   const startRecording = async () => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert("Audio recording is not supported in this browser.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -73,7 +93,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setIsRecording(true);
     } catch (error) {
       console.error("Recording error:", error);
-      alert("Please allow microphone access.");
+      alert("Please allow microphone access to send audio messages.");
     }
   };
 
@@ -123,11 +143,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   // ------------------------------------------------------------------
   const sendTextMessage = async () => {
     const trimmed = messageText.trim();
-    if (!trimmed) return;
+    if (!trimmed || sending) return;
 
     try {
       setSending(true);
 
+      // payload matches messages table exactly
       await messagesAPI.send({
         booking_id: bookingId ?? null,
         sender_id: userId,
@@ -140,8 +161,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setMessageText("");
       await triggerPushNotification("text", trimmed);
     } catch (error) {
-      console.error(error);
-      alert("Failed to send message");
+      console.error("Text message send failed:", error);
+      alert("Failed to send message. Please try again.");
     } finally {
       setSending(false);
     }
@@ -151,7 +172,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   // 🎙️ SEND AUDIO MESSAGE
   // ------------------------------------------------------------------
   const sendAudioMessage = async () => {
-    if (!audioBlob) return;
+    if (!audioBlob || sending) return;
 
     try {
       setSending(true);
@@ -177,8 +198,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       setAudioBlob(null);
       await triggerPushNotification("audio", "");
     } catch (error) {
-      console.error(error);
-      alert("Failed to send audio message");
+      console.error("Audio message send failed:", error);
+      alert("Failed to send audio message. Please try again.");
     } finally {
       setSending(false);
     }
@@ -189,14 +210,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   // ------------------------------------------------------------------
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || sending) return;
 
     try {
       setSending(true);
 
-      const filePath = `${bookingId ?? "direct"}/${userId}/${Date.now()}-${
-        file.name
-      }`;
+      const filePath = `${bookingId ?? "direct"}/${userId}/${Date.now()}-${file.name}`;
 
       const imageUrl = await uploadFile(
         STORAGE_BUCKETS.CHAT_IMAGES,
@@ -215,8 +234,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
       await triggerPushNotification("image", "");
     } catch (err) {
-      console.error(err);
-      alert("Failed to send image");
+      console.error("Image upload failed:", err);
+      alert("Failed to send image. Please try again.");
     } finally {
       setSending(false);
       e.target.value = "";
@@ -231,14 +250,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       {/* Header */}
       <div className="bg-green-600 text-white px-6 py-4 rounded-t-xl">
         <h3 className="font-semibold text-sm sm:text-base">
-          {otherUserName
-            ? `Chat with ${otherUserName}`
-            : "Conversation"}{/* 👈 fallback */}
+          {otherUserName ? `Chat with ${otherUserName}` : "Conversation"}
         </h3>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 bg-gray-50">
         {loading ? (
           <div className="text-center text-gray-500 py-8 text-sm">
             Loading messages...
@@ -294,6 +311,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* NEW: Book button bar (only shows if parent enables it) */}
+      {canBookFromChat && onBookFromChat && (
+        <div className="border-t border-gray-200 px-4 py-2 bg-white">
+          <button
+            onClick={onBookFromChat}
+            className="w-full text-sm font-semibold bg-green-600 text-white rounded-lg py-2 hover:bg-green-700 transition"
+          >
+            Book this provider
+          </button>
+        </div>
+      )}
 
       {/* Pending Audio Banner */}
       {audioBlob && (
@@ -359,7 +388,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             type="text"
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendTextMessage()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                sendTextMessage();
+              }
+            }}
             placeholder="Type a message..."
             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
             disabled={sending || isRecording}
@@ -385,6 +419,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   );
 };
 
+// --------------------------------------------------
+// Small AudioPlayer helper
+// --------------------------------------------------
 const AudioPlayer: React.FC<{ src: string; isSender: boolean }> = ({
   src,
   isSender,
@@ -400,7 +437,7 @@ const AudioPlayer: React.FC<{ src: string; isSender: boolean }> = ({
     } else {
       audioRef.current.play();
     }
-    setPlaying(!playing);
+    setPlaying((prev) => !prev);
   };
 
   return (

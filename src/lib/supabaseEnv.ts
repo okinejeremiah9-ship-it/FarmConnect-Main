@@ -1,4 +1,4 @@
-import type { SupabaseClientOptions } from "@supabase/supabase-js";
+import type { supabaseOptions } from "@supabase/supabase-js";
 
 type EnvRecord = Record<string, string | undefined>;
 
@@ -124,4 +124,4 @@ export function resolveSupabaseConfig(): SupabaseConfig {
   return { url, anonKey };
 }
 
-export type { SupabaseConfig, SupabaseClientOptions };
+export type { SupabaseConfig, supabaseOptions };

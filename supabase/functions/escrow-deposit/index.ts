@@ -17,7 +17,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Validate booking
-    const { data: booking, error: bookingError } = await supabaseClient
+    const { data: booking, error: bookingError } = await supabase
       .from('bookings')
       .select('*, services(title, provider_id)')
       .eq('id', booking_id)
@@ -41,7 +41,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Check if escrow already exists
-    const { data: existingEscrow } = await supabaseClient
+    const { data: existingEscrow } = await supabase
       .from('escrow_wallet')
       .select('id')
       .eq('booking_id', booking_id)
@@ -55,7 +55,7 @@ Deno.serve(async (req: Request) => {
 
     if (USE_WALLET_SIMULATION) {
       // SIMULATION MODE: Use wallet balance
-      const { data: wallet } = await supabaseClient
+      const { data: wallet } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', farmer_id)
@@ -66,7 +66,7 @@ Deno.serve(async (req: Request) => {
       }
 
       // Deduct from wallet
-      await supabaseClient
+      await supabase
         .from('wallets')
         .update({
           balance: parseFloat(wallet.balance) - amount,
@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
         .eq('user_id', farmer_id);
 
       // Create escrow record
-      const { data: escrow, error: escrowError } = await supabaseClient
+      const { data: escrow, error: escrowError } = await supabase
         .from('escrow_wallet')
         .insert({
           booking_id,
@@ -103,7 +103,7 @@ Deno.serve(async (req: Request) => {
       );
     } else {
       // PRODUCTION MODE: Use Paystack
-      const { data: escrow, error: escrowError } = await supabaseClient
+      const { data: escrow, error: escrowError } = await supabase
         .from('escrow_wallet')
         .insert({
           booking_id,

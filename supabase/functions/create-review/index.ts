@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 200, headers: corsHeaders });
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
 
     if (rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5");
 
-    const { data: review, error } = await supabaseClient
+    const { data: review, error } = await supabase
       .from("reviews")
       .insert({ reviewer_id, reviewee_id, booking_id, service_id, rating, comment })
       .select(`
