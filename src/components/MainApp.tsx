@@ -38,6 +38,9 @@ import { DisputesPage } from "./disputes/DisputesPage";
 import DriverTrackingPage from "./tracking/DriverTrackingPage";
 import LiveTrackingView from "./tracking/LiveTrackingView";
 
+// ⭐ NEW: Role Matrix admin page
+import { RoleMatrixPage } from "./admin/RoleMatrixPage";
+
 interface MainAppProps {
   user: any;
   onLogout: () => void;
@@ -240,7 +243,11 @@ export const MainApp: React.FC<MainAppProps> = ({
       case "provider-profile":
         return (
           <PageTransition>
-            <PageHeader title="Provider" subtitle="Service Details" onBack={navigateBack} />
+            <PageHeader
+              title="Provider"
+              subtitle="Service Details"
+              onBack={navigateBack}
+            />
             <UserProfile userId={selectedProviderId!} isOwnProfile={false} />
           </PageTransition>
         );
@@ -303,6 +310,19 @@ export const MainApp: React.FC<MainAppProps> = ({
                 onBack={navigateBack}
               />
             )}
+          </PageTransition>
+        );
+
+      // ⭐ NEW: ROLE MATRIX ROUTE FOR ADMINS
+      case "role-matrix":
+        return (
+          <PageTransition>
+            <PageHeader
+              title="Role Matrix"
+              subtitle="Manage user roles & permissions"
+              onBack={navigateBack}
+            />
+            <RoleMatrixPage adminId={user.id} />
           </PageTransition>
         );
 

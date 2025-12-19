@@ -21,40 +21,53 @@ Deno.serve(async (req: Request) => {
     const { booking_id, user_id, status } = await req.json();
 
     if (!booking_id || !user_id || !status) {
-      throw new Error('Missing required fields');
+      throw new Error("Missing required fields");
     }
 
-    const validStatuses = ['pending', 'accepted', 'declined', 'in-progress', 'completed', 'cancelled'];
+    // FULL VALID STATUSES — MUST MATCH DATABASE CHECK CONSTRAINT
+    const validStatuses = [
+      "pending",
+      "requested",
+      "accepted",
+      "declined",
+      "in-progress",
+      "provider_completed",
+      "farmer_rejected",
+      "disputed",
+      "completed",
+      "cancelled",
+    ];
+
     if (!validStatuses.includes(status)) {
-      throw new Error('Invalid status');
+      throw new Error(`Invalid status: ${status}`);
     }
 
-    // Get booking and verify user is involved
+    // Get booking to verify user
     const { data: booking, error: bookingError } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('id', booking_id)
+      .from("bookings")
+      .select("*")
+      .eq("id", booking_id)
       .maybeSingle();
 
     if (bookingError || !booking) {
-      throw new Error('Invalid booking');
+      throw new Error("Invalid booking");
     }
 
-    // Check if user is farmer or provider
+    // Verify user is farmer or provider
     if (booking.farmer_id !== user_id && booking.provider_id !== user_id) {
-      throw new Error('Unauthorized: You are not part of this booking');
+      throw new Error("Unauthorized: You are not part of this booking");
     }
 
     // Update booking status
     const { data: updatedBooking, error: updateError } = await supabase
-      .from('bookings')
+      .from("bookings")
       .update({ status })
-      .eq('id', booking_id)
+      .eq("id", booking_id)
       .select()
       .maybeSingle();
 
     if (updateError || !updatedBooking) {
-      throw new Error('Failed to update booking status');
+      throw new Error("Failed to update booking status");
     }
 
     return new Response(
@@ -62,13 +75,14 @@ Deno.serve(async (req: Request) => {
         success: true,
         booking: updatedBooking,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    console.error('Booking update error:', error);
+
+  } catch (error: any) {
+    console.error("Booking update error:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

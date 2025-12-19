@@ -160,6 +160,66 @@ export const AdminDisputesPage: React.FC<AdminDisputesPageProps> = ({ adminId })
                       <p className="text-sm text-gray-800">{dispute.details}</p>
                     </div>
 
+                    {/* 💬 Dispute Conversation */}
+{Array.isArray(dispute.messages) && dispute.messages.length > 0 && (
+  <div className="mt-4 bg-white border rounded-lg p-4">
+    <h4 className="text-sm font-semibold text-gray-800 mb-3">
+      Conversation
+    </h4>
+
+    <div className="space-y-3">
+      {dispute.messages.map((msg: any) => {
+        const isFarmer = msg.sender?.role === "farmer";
+        const isProvider = msg.sender?.role === "provider";
+
+        return (
+          <div
+            key={msg.id}
+            className={`p-3 rounded-lg text-sm ${
+              isFarmer
+                ? "bg-green-50 border border-green-200"
+                : "bg-blue-50 border border-blue-200"
+            }`}
+          >
+            <div className="flex justify-between mb-1">
+              <span className="font-medium text-gray-900">
+                {msg.sender?.name} ({msg.sender?.role})
+              </span>
+              <span className="text-xs text-gray-500">
+                {new Date(msg.created_at).toLocaleString()}
+              </span>
+            </div>
+
+            {msg.message && (
+              <p className="text-gray-800 mb-2">{msg.message}</p>
+            )}
+
+            {msg.audio_url && (
+              <audio controls className="w-full mt-2">
+                <source src={msg.audio_url} />
+              </audio>
+            )}
+
+            {Array.isArray(msg.image_urls) && msg.image_urls.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {msg.image_urls.map((img: string, i: number) => (
+                  <img
+                    key={i}
+                    src={img}
+                    alt="Dispute evidence"
+                    className="rounded border object-cover h-24 w-full"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  </div>
+)}
+
+
                     {/* Audio Evidence */}
                     {dispute.audio_url && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">

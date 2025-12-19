@@ -2,9 +2,8 @@
 // PROVIDER DASHBOARD — FULL FILE (CONFIRMATION WORKFLOW READY)
 // -------------------------------------------------------------
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useUserSession } from "../../contexts/UserSessionContext";
-
 
 import { useUserStats } from "../../hooks/useUserStats";
 import { useRealtimeBookingUpdates } from "../../hooks/useRealtimeSubscription";
@@ -26,12 +25,17 @@ import {
   MessageSquare,
   Check,
   X,
+  FileText,
+  AlertTriangle,
+  Play,
+  Pause,
 } from "lucide-react";
 
 import { uploadFile } from "../../lib/upload";
 import { STORAGE_BUCKETS } from "../../lib/supabase";
 import CreateServiceModal from "../services/CreateServiceModal";
 import { TrackingAPI } from "../../lib/api/trackingAPI"; // ✅ ADDED, nothing removed
+import { disputeAPI } from "../../lib/api";
 
 // -------------------------------------------------------------
 // TYPES
@@ -102,13 +106,25 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
   const [completing, setCompleting] = useState(false);
 
   // -------------------------------------------------------------
+  // DISPUTE MODAL STATE
+  // -------------------------------------------------------------
+  const [disputeModalOpen, setDisputeModalOpen] = useState(false);
+  const [disputeLoading, setDisputeLoading] = useState(false);
+  const [disputeError, setDisputeError] = useState("");
+  const [activeDispute, setActiveDispute] = useState<any>(null);
+
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // -------------------------------------------------------------
   // NORMALIZER
   // -------------------------------------------------------------
   const normalizeBooking = (booking: any): BookingSummary => {
     const escrow =
-      Array.isArray(booking.escrow_wallet) &&
-      booking.escrow_wallet.length > 0
+      Array.isArray(booking.escrow_wallet) && booking.escrow_wallet.length > 0
         ? booking.escrow_wallet[0]
+        : booking.escrow_wallet
+        ? booking.escrow_wallet
         : null;
 
     return {
@@ -119,8 +135,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
       notes: booking.notes,
       totalPrice: Number(booking.total_price ?? 0),
       serviceLocation: booking.service_location,
-      farmerName:
-        booking.farmer?.name || booking.farmer_name || "Farmer",
+      farmerName: booking.farmer?.name || booking.farmer_name || "Farmer",
       farmerId: booking.farmer_id,
       serviceTitle:
         booking.service?.title || booking.service_title || "Requested Service",
@@ -195,9 +210,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
       )
       .map(normalizeBooking)
       .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() -
-          new Date(a.createdAt).getTime()
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
   }, [bookings, user.id]);
 
@@ -210,9 +223,7 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
       .filter((b) => b.provider_id === user.id)
       .map(normalizeBooking)
       .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() -
-          new Date(a.createdAt).getTime()
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )
       .slice(0, 6);
   }, [bookings, user.id]);
@@ -237,32 +248,29 @@ export const ProviderDashboard: React.FC<ProviderDashboardProps> = ({
   };
 
   // -------------------------------------------------------------
-  // START GPS TRACKING FOR BOOKING (UPDATED, NOTHING REMOVED)
-// -------------------------------------------------------------
-// -------------------------------------------------------------
-// START GPS TRACKING FOR BOOKING — use tracking_sessions
-// -------------------------------------------------------------
-const startTracking = async (bookingId: string) => {
-  try {
-    const session = await TrackingAPI.createSession(
-      bookingId,
-      user.id,
-      user.name || "Driver",
-      (user as any)?.phone || null
-    );
+  // START GPS TRACKING FOR BOOKING — use tracking_sessions
+  // -------------------------------------------------------------
+  const startTracking = async (bookingId: string) => {
+    try {
+      const session = await TrackingAPI.createSession(
+        bookingId,
+        user.id,
+        user.name || "Driver",
+        (user as any)?.phone || null
+      );
 
-    if (!session?.id) {
-      alert("Could not start tracking session.");
-      return;
+      if (!session?.id) {
+        alert("Could not start tracking session.");
+        return;
+      }
+
+      // Move provider to the dedicated driver tracking screen
+      onNavigate("driver-tracking", undefined, session.id);
+    } catch (err) {
+      console.error("Failed to start tracking:", err);
+      alert("Could not start GPS tracking");
     }
-
-    // Move provider to the dedicated driver tracking screen
-    onNavigate("driver-tracking", undefined, session.id);
-  } catch (err) {
-    console.error("Failed to start tracking:", err);
-    alert("Could not start GPS tracking");
-  }
-};
+  };
 
   // -------------------------------------------------------------
   // Update booking status
@@ -280,6 +288,76 @@ const startTracking = async (bookingId: string) => {
     } catch (err) {
       console.error("Failed to update booking status:", err);
     }
+  };
+
+  // -------------------------------------------------------------
+  // Helper: detect dispute escrow status
+  // -------------------------------------------------------------
+  const isDisputed = (escrowStatus?: string | null) => {
+    const s = (escrowStatus || "").toLowerCase();
+    return s === "disputed" || s === "under_dispute" || s === "in_dispute";
+  };
+
+  // -------------------------------------------------------------
+  // DISPUTE: open dispute for a booking (loads via Edge function)
+  // -------------------------------------------------------------
+  const openDisputeForBooking = async (bookingId: string) => {
+    setDisputeModalOpen(true);
+    setDisputeLoading(true);
+    setDisputeError("");
+    setActiveDispute(null);
+    setPlayingAudioUrl(null);
+
+    try {
+      const res = await disputeAPI.listForUser(user.id);
+      if (!res?.success) {
+        throw new Error(res?.error || "Failed to fetch disputes");
+      }
+
+      const list = res.disputes || [];
+      const found =
+        list.find((d: any) => d?.escrow?.booking?.id === bookingId) ||
+        list.find((d: any) => d?.escrow?.booking_id === bookingId) ||
+        null;
+
+      if (!found) {
+        setDisputeError("No dispute record found for this booking.");
+        return;
+      }
+
+      setActiveDispute(found);
+    } catch (err: any) {
+      console.error("Open dispute failed:", err);
+      setDisputeError(err?.message || "Failed to open dispute");
+    } finally {
+      setDisputeLoading(false);
+    }
+  };
+
+  const closeDisputeModal = () => {
+    setDisputeModalOpen(false);
+    setDisputeLoading(false);
+    setDisputeError("");
+    setActiveDispute(null);
+    setPlayingAudioUrl(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  };
+
+  const toggleAudioPlayback = (url?: string | null) => {
+    if (!url || !audioRef.current) return;
+
+    if (playingAudioUrl === url) {
+      audioRef.current.pause();
+      setPlayingAudioUrl(null);
+      return;
+    }
+
+    audioRef.current.src = url;
+    audioRef.current.play();
+    setPlayingAudioUrl(url);
   };
 
   // -------------------------------------------------------------
@@ -336,7 +414,6 @@ const startTracking = async (bookingId: string) => {
       ---------------------------------------------------------- */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid md:grid-cols-4 gap-6 mb-8">
-
           {/* Active Services */}
           <div className="bg-white p-6 rounded-xl shadow-sm">
             <div className="flex items-center">
@@ -474,8 +551,7 @@ const startTracking = async (bookingId: string) => {
                         <div className="flex items-center gap-2">
                           <AlertCircle className="w-4 h-4 text-gray-400" />
                           <span>
-                            Received{" "}
-                            {new Date(request.createdAt).toLocaleString()}
+                            Received {new Date(request.createdAt).toLocaleString()}
                           </span>
                         </div>
                       </div>
@@ -491,6 +567,17 @@ const startTracking = async (bookingId: string) => {
                         <EscrowStatusBadge
                           status={request.escrowStatus ?? "pending"}
                         />
+
+                        {/* ✅ View Dispute (opens modal) */}
+                        {isDisputed(request.escrowStatus) && (
+                          <button
+                            onClick={() => openDisputeForBooking(request.id)}
+                            className="inline-flex items-center px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 border border-red-200"
+                          >
+                            <FileText className="w-4 h-4 mr-2" />
+                            View dispute
+                          </button>
+                        )}
 
                         {/* Accept */}
                         {request.status === "pending" && (
@@ -520,24 +607,19 @@ const startTracking = async (bookingId: string) => {
 
                         {/* Chat */}
                         <button
-                          onClick={() =>
-                            onNavigate("chat", request.farmerId)
-                          }
+                          onClick={() => onNavigate("chat", request.farmerId)}
                           className="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50"
                         >
                           <MessageSquare className="w-4 h-4 mr-2" />
                           Message farmer
                         </button>
 
-                        {/* NEW: Start Job */}
+                        {/* Start Job */}
                         {request.status === "accepted" && (
                           <button
                             onClick={async () => {
-                              await updateBookingStatus(
-                                request.id,
-                                "in-progress"
-                              );
-                              startTracking(request.id); // uses updated tracking, rest unchanged
+                              await updateBookingStatus(request.id, "in-progress");
+                              startTracking(request.id);
                             }}
                             className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600"
                           >
@@ -546,7 +628,7 @@ const startTracking = async (bookingId: string) => {
                           </button>
                         )}
 
-                        {/* NEW: Mark Completed */}
+                        {/* Mark Completed */}
                         {["accepted", "in-progress"].includes(request.status) && (
                           <button
                             onClick={() => setCompletingBooking(request)}
@@ -614,9 +696,7 @@ const startTracking = async (bookingId: string) => {
                     <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-600">
                       <span className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-400" />
-                        {new Date(
-                          booking.scheduledDate
-                        ).toLocaleDateString()}
+                        {new Date(booking.scheduledDate).toLocaleDateString()}
                       </span>
 
                       {booking.totalPrice ? (
@@ -631,6 +711,17 @@ const startTracking = async (bookingId: string) => {
                       <EscrowStatusBadge
                         status={booking.escrowStatus ?? "pending"}
                       />
+
+                      {/* ✅ View Dispute in Recent Activity too */}
+                      {isDisputed(booking.escrowStatus) && (
+                        <button
+                          onClick={() => openDisputeForBooking(booking.id)}
+                          className="inline-flex items-center px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 border border-red-200"
+                        >
+                          <FileText className="w-3 h-3 mr-1" />
+                          View dispute
+                        </button>
+                      )}
 
                       {booking.status === "completed" && (
                         <button
@@ -663,6 +754,256 @@ const startTracking = async (bookingId: string) => {
           </div>
         )}
       </div>
+
+      {/* -------------------------------------------------------------
+          DISPUTE DETAILS MODAL (provider can view what farmer sent)
+      -------------------------------------------------------------- */}
+      {disputeModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Dispute Details
+                </h3>
+                <p className="text-sm text-gray-600">
+                  See what the farmer submitted for this booking.
+                </p>
+              </div>
+              <button
+                onClick={closeDisputeModal}
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-6">
+              {disputeLoading ? (
+                <div className="flex items-center justify-center py-10 text-gray-600">
+                  <Clock className="w-5 h-5 mr-2 animate-spin" />
+                  Loading dispute…
+                </div>
+              ) : disputeError ? (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">Could not load dispute</p>
+                    <p className="text-sm">{disputeError}</p>
+                  </div>
+                </div>
+              ) : !activeDispute ? (
+                <div className="text-gray-600">No dispute selected.</div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Summary */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="grid md:grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-600">Service:</span>{" "}
+                        <span className="font-medium">
+                          {activeDispute?.escrow?.booking?.service?.title ||
+                            activeDispute?.escrow?.booking?.service_title ||
+                            "Service"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Amount:</span>{" "}
+                        <span className="font-medium">
+                          GH₵
+                          {parseFloat(activeDispute?.escrow?.amount || "0").toFixed(
+                            2
+                          )}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Raised by:</span>{" "}
+                        <span className="font-medium">
+                          {activeDispute?.raised_by_user?.name || "Farmer"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Date:</span>{" "}
+                        <span className="font-medium">
+                          {activeDispute?.created_at
+                            ? new Date(activeDispute.created_at).toLocaleString()
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reason/Details */}
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-1">Reason</h4>
+                    <p className="text-gray-800">{activeDispute?.reason}</p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold text-gray-900 mb-1">Details</h4>
+                    <p className="text-gray-700 whitespace-pre-wrap">
+                      {activeDispute?.details}
+                    </p>
+                  </div>
+
+                  {/* Original Audio Evidence */}
+                  {activeDispute?.audio_url && (
+                    <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => toggleAudioPlayback(activeDispute.audio_url)}
+                          className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition"
+                        >
+                          {playingAudioUrl === activeDispute.audio_url ? (
+                            <Pause className="h-5 w-5" />
+                          ) : (
+                            <Play className="h-5 w-5" />
+                          )}
+                        </button>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {playingAudioUrl === activeDispute.audio_url
+                              ? "Playing audio…"
+                              : "Play farmer audio evidence"}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            Recorded by {activeDispute?.raised_by_user?.name || "Farmer"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conversation (if any) */}
+                  {Array.isArray(activeDispute?.messages) && (
+                    <div>
+                      <h4 className="font-semibold text-gray-900 mb-2">
+                        Conversation
+                      </h4>
+                      <div className="border rounded-lg max-h-64 overflow-y-auto p-3 bg-gray-50 space-y-3">
+                        {activeDispute.messages.length === 0 ? (
+                          <p className="text-sm text-gray-500">
+                            No replies yet.
+                          </p>
+                        ) : (
+                          activeDispute.messages
+                            .slice()
+                            .sort(
+                              (a: any, b: any) =>
+                                new Date(a.created_at).getTime() -
+                                new Date(b.created_at).getTime()
+                            )
+                            .map((msg: any) => {
+                              const isSelf = msg.sender_id === user.id;
+                              const senderName =
+                                msg.sender?.name || (isSelf ? "You" : "User");
+                              const createdAt = msg.created_at
+                                ? new Date(msg.created_at).toLocaleString()
+                                : "";
+
+                              return (
+                                <div key={msg.id}>
+                                  <div
+                                    className={`flex ${
+                                      isSelf ? "justify-end" : "justify-start"
+                                    }`}
+                                  >
+                                    <div
+                                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm ${
+                                        isSelf
+                                          ? "bg-green-600 text-white"
+                                          : "bg-white text-gray-900"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2 mb-1">
+                                        <span className="font-semibold text-xs">
+                                          {senderName}
+                                        </span>
+                                        <span className="text-[10px] opacity-75">
+                                          {createdAt}
+                                        </span>
+                                      </div>
+
+                                      {msg.message && (
+                                        <p className="whitespace-pre-wrap">
+                                          {msg.message}
+                                        </p>
+                                      )}
+
+                                      {msg.audio_url && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleAudioPlayback(msg.audio_url)}
+                                          className={`mt-2 inline-flex items-center px-2 py-1 rounded-full text-xs ${
+                                            isSelf
+                                              ? "bg-green-700 text-white"
+                                              : "bg-blue-100 text-blue-800"
+                                          }`}
+                                        >
+                                          {playingAudioUrl === msg.audio_url ? (
+                                            <Pause className="w-3 h-3 mr-1" />
+                                          ) : (
+                                            <Play className="w-3 h-3 mr-1" />
+                                          )}
+                                          Audio
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Images (optional, only render if present) */}
+                                  {msg.image_urls && Array.isArray(msg.image_urls) && (
+                                    <div
+                                      className={`mt-2 flex flex-wrap gap-2 ${
+                                        isSelf ? "justify-end" : "justify-start"
+                                      }`}
+                                    >
+                                      {msg.image_urls.map((url: string, idx: number) => (
+                                        <img
+                                          key={idx}
+                                          src={url}
+                                          className="w-28 h-28 object-cover rounded-lg border cursor-pointer"
+                                          onClick={() => window.open(url, "_blank")}
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })
+                        )}
+                      </div>
+
+                      <p className="text-xs text-gray-500 mt-2">
+                        To reply, use the Disputes page.
+                      </p>
+
+                      <div className="mt-3">
+                        <button
+                          onClick={() => {
+                            closeDisputeModal();
+                            onNavigate("disputes");
+                          }}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700"
+                        >
+                          <FileText className="w-4 h-4 mr-2" />
+                          Open Disputes page
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <audio
+              ref={audioRef}
+              onEnded={() => setPlayingAudioUrl(null)}
+              className="hidden"
+            />
+          </div>
+        </div>
+      )}
 
       {/* COMPLETION MODAL */}
       {completingBooking && (

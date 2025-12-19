@@ -19,16 +19,18 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { user_id, admin_id } = await req.json();
+    const { user_id, admin_id, mode } = await req.json();
 
-    if (!user_id && !admin_id) {
-      throw new Error("user_id or admin_id is required");
+    if (!mode) {
+      throw new Error("mode is required (admin | user)");
     }
 
-    // -------------------------------------
-    // 🔹 ADMIN MODE
-    // -------------------------------------
-    if (admin_id) {
+    /* ============================================================
+       🔹 ADMIN MODE
+       ============================================================ */
+    if (mode === "admin") {
+      if (!admin_id) throw new Error("admin_id is required");
+
       const { data: admin } = await supabase
         .from("users")
         .select("role")
@@ -36,93 +38,108 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       if (!admin || admin.role !== "admin") {
-        throw new Error("Unauthorized: Admin access required");
+        throw new Error("Unauthorized");
       }
 
-      const { data: disputes, error: disputesError } = await supabase
+      const { data, error } = await supabase
         .from("disputes")
         .select(`
           *,
-          escrow:escrow_wallet(
+          escrow:escrow_id (
             id,
             amount,
             status,
-            booking:booking_id(
+            farmer:farmer_id (id, name, phone),
+            provider:provider_id (id, name, phone),
+            booking:booking_id (
               id,
-              service:service_id(title),
-              scheduled_date
-            ),
-            farmer:farmer_id(id, name, phone),
-            provider:provider_id(id, name, phone)
+              scheduled_date,
+              service:service_id (title)
+            )
           ),
-          raised_by_user:raised_by(id, name, phone, role),
-          resolved_by_user:resolved_by(id, name)
+          raised_by_user:raised_by (id, name, phone, role),
+          messages:dispute_messages (
+            id,
+            message,
+            audio_url,
+            sender_id,
+            created_at,
+            sender:users!dispute_messages_sender_id_fkey (
+              id,
+              name,
+              role
+            )
+          )
         `)
         .order("created_at", { ascending: false });
 
-      if (disputesError) {
-        throw new Error("Failed to fetch disputes: " + disputesError.message);
-      }
+      if (error) throw error;
 
       return new Response(
-        JSON.stringify({
-          success: true,
-          disputes: disputes || [],
-        }),
+        JSON.stringify({ success: true, disputes: data }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // -------------------------------------
-    // 🔹 USER MODE (farmer or provider)
-    // -------------------------------------
-    const { data: disputes, error: disputesError } = await supabase
-      .from("disputes")
-      .select(`
-        *,
-        escrow:escrow_wallet(
-          id,
-          amount,
-          status,
-          farmer_id,
-          provider_id,
-          booking:booking_id(
-            id,
-            service:service_id(title),
-            scheduled_date
-          ),
-          farmer:farmer_id(id, name, phone),
-          provider:provider_id(id, name, phone)
-        ),
-        raised_by_user:raised_by(id, name, phone, role),
-        resolved_by_user:resolved_by(id, name)
-      `)
-      -- no .or() here
-      .order("created_at", { ascending: false });
+    /* ============================================================
+       🔹 USER MODE (FARMER / PROVIDER)
+       ============================================================ */
+    if (mode === "user") {
+      if (!user_id) throw new Error("user_id is required");
 
-    if (disputesError) {
-      throw new Error("Failed to fetch disputes: " + disputesError.message);
+      const { data, error } = await supabase
+        .from("disputes")
+        .select(`
+          *,
+          escrow:escrow_id (
+            id,
+            amount,
+            status,
+            farmer:farmer_id (id, name, phone),
+            provider:provider_id (id, name, phone),
+            booking:booking_id (
+              id,
+              scheduled_date,
+              service:service_id (title)
+            )
+          ),
+          raised_by_user:raised_by (id, name, phone, role),
+          messages:dispute_messages (
+            id,
+            message,
+            audio_url,
+            sender_id,
+            created_at,
+            sender:users!dispute_messages_sender_id_fkey (
+              id,
+              name,
+              role
+            )
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      // ✅ SAFE JS FILTERING
+      const filtered = (data || []).filter((d) => {
+        const escrow = d.escrow;
+        return (
+          d.raised_by === user_id ||
+          escrow?.farmer?.id === user_id ||
+          escrow?.provider?.id === user_id
+        );
+      });
+
+      return new Response(
+        JSON.stringify({ success: true, disputes: filtered }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    const userDisputes =
-      disputes?.filter((dispute) => {
-        const escrow = dispute.escrow as any;
-        return (
-          dispute.raised_by === user_id ||
-          escrow?.farmer_id === user_id ||
-          escrow?.provider_id === user_id
-        );
-      }) || [];
+    throw new Error("Invalid mode");
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        disputes: userDisputes,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   } catch (error: any) {
-    console.error("Disputes list error:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
       {

@@ -25,6 +25,17 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
   return data;
 }
 
+/* 🐞 DEBUG API */
+export const debugAPI = {
+fundEscrow: async (bookingId: string) => {
+  return fetchAPI("debug-fund-escrow", {
+    method: "POST",
+    body: JSON.stringify({ booking_id: bookingId }),
+  });
+},
+
+};
+
 /* 🪙 WALLET API */
 export const walletAPI = {
   getBalance: async (userId: string) => {
@@ -48,7 +59,7 @@ export const escrowAPI = {
     });
   },
 
-  dispute: async (escrowId, userId, reason, details, audioUrl) => {
+  dispute: async (escrowId: string, userId: string, reason: string, details: string, audioUrl?: string | null) => {
     return fetchAPI("escrow-dispute", {
       method: "POST",
       body: JSON.stringify({
@@ -92,9 +103,36 @@ export const disputeAPI = {
   },
 
   /**
+   * 🔹 Add a farmer/provider reply with text, audio, images
+   */
+  addMessage: async (
+    disputeId: string,
+    senderId: string,
+    message?: string,
+    audioUrl?: string | null,
+    imageUrls?: string[] | null
+  ) => {
+    return fetchAPI("add-dispute-message", {
+      method: "POST",
+      body: JSON.stringify({
+        dispute_id: disputeId,
+        sender_id: senderId,
+        message: message || null,
+        audio_url: audioUrl || null,
+        image_urls: imageUrls || null,
+      }),
+    });
+  },
+
+  /**
    * 🔹 Admin resolves a dispute
    */
-  resolve: async (disputeId: string, adminId: string, resolution: string, action: string) => {
+  resolve: async (
+    disputeId: string,
+    adminId: string,
+    resolution: string,
+    action: string
+  ) => {
     return fetchAPI("dispute-resolve", {
       method: "POST",
       body: JSON.stringify({
@@ -238,7 +276,7 @@ export const bookingAPI = {
     });
   },
 
-  create: async (data) => {
+  create: async (data: any) => {
     return fetchAPI("create-booking", {
       method: "POST",
       body: JSON.stringify(data),
@@ -248,7 +286,21 @@ export const bookingAPI = {
 
 /* 🗺️ MAP API */
 export const mapAPI = {
-  getNearbyServices: async ({ lat, lng, radius, category, minRating, farmerId }) => {
+  getNearbyServices: async ({
+    lat,
+    lng,
+    radius,
+    category,
+    minRating,
+    farmerId,
+  }: {
+    lat: number;
+    lng: number;
+    radius?: number;
+    category?: string;
+    minRating?: number;
+    farmerId?: string;
+  }) => {
     const params = new URLSearchParams({
       lat: String(lat),
       lng: String(lng),
@@ -256,12 +308,16 @@ export const mapAPI = {
     });
 
     if (category) params.append("category", category);
-    if (typeof minRating === "number") params.append("min_rating", String(minRating));
+    if (typeof minRating === "number") params.append(
+      "min_rating",
+      String(minRating)
+    );
     if (farmerId) params.append("farmer_id", farmerId);
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
   },
 };
+
 export const completionAPI = {
   submit: async (bookingId: string, images: string[]) => {
     const { data, error } = await supabase
@@ -278,10 +334,12 @@ export const completionAPI = {
   },
 };
 
-
-/* 🧑‍💼 ADMIN API */
+/* 🧑‍💼 ADMIN API — FIXED FOR POST */
 export const adminAPI = {
   getDashboardStats: async (adminId: string) => {
-    return fetchAPI(`admin-dashboard-stats?admin_id=${adminId}`);
+    return fetchAPI("admin-dashboard-stats", {
+      method: "POST",
+      body: JSON.stringify({ admin_id: adminId }),
+    });
   },
 };

@@ -30,9 +30,8 @@ const distanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
@@ -111,13 +110,14 @@ export const ServiceMarketplace: React.FC = () => {
     minRating: 0,
   });
   const [search, setSearch] = useState("");
+
+  // ⭐ NEW — Show All toggle
+  const [showAll, setShowAll] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
 
-  const [userLocation, setUserLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   // Chat state
   const [activeChatService, setActiveChatService] = useState<ServiceListing | null>(null);
@@ -139,7 +139,6 @@ export const ServiceMarketplace: React.FC = () => {
     autoSyncToSupabase: false,
   });
 
-  // Sync to usable location state
   useEffect(() => {
     if (coordinates) {
       setUserLocation({ lat: coordinates.latitude, lng: coordinates.longitude });
@@ -159,24 +158,22 @@ export const ServiceMarketplace: React.FC = () => {
     setLoading(true);
 
     try {
-      // 1. Load services table
       const { data: serviceRows, error: servicesError } = await supabase
         .from("services")
         .select("*")
         .eq("availability", "available");
 
       if (servicesError) throw new Error(servicesError.message);
+
       if (!serviceRows || serviceRows.length === 0) {
         setAllListings([]);
         return;
       }
 
-      // 2. Collect provider IDs
       const providerIds = Array.from(
         new Set(serviceRows.map((s) => s.provider_id).filter(Boolean))
       );
 
-      // 3. Load provider profiles
       const providerMap = new Map();
       if (providerIds.length > 0) {
         const { data: providerRows, error: providerError } = await supabase
@@ -185,11 +182,9 @@ export const ServiceMarketplace: React.FC = () => {
           .in("id", providerIds);
 
         if (providerError) throw new Error(providerError.message);
-
         providerRows?.forEach((p) => providerMap.set(p.id, p));
       }
 
-      // 4. Merge into ServiceListing[]
       const mapped = serviceRows.map((service) =>
         mapServiceRowToListing(service, providerMap.get(service.provider_id), userLocation)
       );
@@ -213,7 +208,8 @@ export const ServiceMarketplace: React.FC = () => {
   const filteredListings = useMemo(() => {
     let list = [...allListings];
 
-    if (filters.radiusKm && userLocation) {
+    // ⭐ NEW: ONLY filter by distance when NOT showing all
+    if (!showAll && filters.radiusKm && userLocation) {
       list = list.filter((s) => s.distanceKm != null && s.distanceKm <= filters.radiusKm);
     }
 
@@ -255,7 +251,7 @@ export const ServiceMarketplace: React.FC = () => {
     });
 
     return list;
-  }, [allListings, filters, search, userLocation]);
+  }, [allListings, filters, search, userLocation, showAll]);
 
   // -----------------------------
   // CHAT
@@ -337,6 +333,31 @@ export const ServiceMarketplace: React.FC = () => {
 
         <ServiceFiltersComponent filters={filters} onFiltersChange={setFilters} />
 
+        {/* ⭐ NEW — Buttons */}
+        <div className="flex items-center gap-3 mt-3">
+          <button
+            onClick={() => setShowAll(false)}
+            className={`px-3 py-2 rounded-md text-xs font-semibold ${
+              !showAll
+                ? "bg-green-600 text-white"
+                : "bg-gray-200 text-gray-700"
+            }`}
+          >
+            Nearby Only
+          </button>
+
+          <button
+            onClick={() => setShowAll(true)}
+            className={`px-3 py-2 rounded-md text-xs font-semibold ${
+              showAll
+                ? "bg-blue-600 text-white"
+                : "bg-gray-200 text-gray-700"
+            }`}
+          >
+            Show All Services
+          </button>
+        </div>
+
         <div className="mt-4">
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
@@ -352,32 +373,31 @@ export const ServiceMarketplace: React.FC = () => {
           </div>
         </div>
 
-{/* Results grid */}
-<div className="mt-6">
-  {loading ? (
-    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <SkeletonServiceCard key={i} />
-      ))}
-    </div>
-  ) : filteredListings.length === 0 ? (
-    <p className="text-sm text-gray-600">
-      No services found for your filters. Try increasing the area radius or clearing some filters.
-    </p>
-  ) : (
-    <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-      {filteredListings.map((service) => (
-        <ServiceCard
-          key={service.id}
-          service={service}
-          onMessageProvider={handleMessageProvider}
-          onBookService={openBookingModal}
-        />
-      ))}
-    </div>
-  )}
-</div>
-
+        {/* Results */}
+        <div className="mt-6">
+          {loading ? (
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <SkeletonServiceCard key={i} />
+              ))}
+            </div>
+          ) : filteredListings.length === 0 ? (
+            <p className="text-sm text-gray-600">
+              No services found for your filters.
+            </p>
+          ) : (
+            <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+              {filteredListings.map((service) => (
+                <ServiceCard
+                  key={service.id}
+                  service={service}
+                  onMessageProvider={handleMessageProvider}
+                  onBookService={openBookingModal}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chat */}
@@ -395,15 +415,14 @@ export const ServiceMarketplace: React.FC = () => {
             </div>
 
             <div className="flex-1">
-            <ChatWindow
-  bookingId={undefined}
-  userId={sessionUser.id}
-  otherUserId={activeChatService.providerId}
-  otherUserName={activeChatService.providerName}
-  canBookFromChat
-  onBookFromChat={() => openBookingModal(activeChatService)}
-/>
-
+              <ChatWindow
+                bookingId={undefined}
+                userId={sessionUser.id}
+                otherUserId={activeChatService.providerId}
+                otherUserName={activeChatService.providerName}
+                canBookFromChat
+                onBookFromChat={() => openBookingModal(activeChatService)}
+              />
             </div>
           </div>
         </div>

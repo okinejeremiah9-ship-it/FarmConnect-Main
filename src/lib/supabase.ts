@@ -19,8 +19,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     // ✅ IMPORTANT: store session in browser localStorage
-    storage:
-      typeof window !== "undefined" ? window.localStorage : undefined,
+    storage: typeof window !== "undefined" ? window.localStorage : undefined,
   },
   realtime: {
     params: { eventsPerSecond: 10 },
@@ -30,19 +29,34 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // -------------------------------------------
 // ✅ STORAGE BUCKETS (Expanded + Unified)
 // -------------------------------------------
-// For ChatWindow compatibility
+// Your actual buckets (from Supabase): profile-pictures, completion_photos, chat_uploads, audio_messages
+// Keep legacy keys for compatibility, but point them to real buckets.
 export const STORAGE_BUCKETS = {
-  // 🔥 New buckets (active)
+  // 🔥 Current buckets (active)
   CHAT_IMAGES: "chat_uploads",
   CHAT_AUDIO: "audio_messages",
   COMPLETION_IMAGES: "completion_photos",
 
-  // 🧩 Legacy buckets (kept for compatibility)
-  AUDIO: "audio-messages",
-  IMAGES: "message-images",
+  // 🧩 Legacy buckets (kept for compatibility — DO NOT REMOVE)
+  // Map old names to the buckets that actually exist now.
+  AUDIO: "audio_messages",
+  IMAGES: "chat_uploads",
   PROFILES: "profile-pictures",
 };
 
+// -------------------------------------------
+// ✅ Bucket Normalizer (prevents "Bucket not found")
+// -------------------------------------------
+function normalizeBucketName(bucket: string): string {
+  if (!bucket) return bucket;
+
+  // If someone passes legacy physical bucket names directly, map them too:
+  if (bucket === "audio-messages") return STORAGE_BUCKETS.AUDIO;
+  if (bucket === "message-images") return STORAGE_BUCKETS.IMAGES;
+  if (bucket === "profile-pictures") return STORAGE_BUCKETS.PROFILES;
+
+  return bucket;
+}
 
 // -------------------------------------------
 // ✅ File Upload (Supports all buckets)
@@ -52,22 +66,39 @@ export async function uploadFile(
   path: string,
   file: File | Blob
 ): Promise<string> {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .upload(path, file, {
-      cacheControl: "3600",
-      upsert: false,
-    });
+  const safeBucket = normalizeBucketName(bucket);
+
+  // Optional: make sure the user has a session (helps debug RLS errors clearly)
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    console.error("❌ Upload blocked: No active Supabase session (not logged in).");
+    throw new Error("Upload failed: You are not logged in.");
+  }
+
+  const contentType =
+    file instanceof File ? file.type : (file as any)?.type || "application/octet-stream";
+
+  const { data, error } = await supabase.storage.from(safeBucket).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType,
+  });
 
   if (error) {
-    console.error("❌ File upload failed:", error.message);
+    // This is the exact error you hit: "new row violates row-level security policy"
+    // That means your Storage RLS policy is blocking INSERT for this bucket.
+    console.error("❌ File upload failed:", error.message, {
+      bucket: safeBucket,
+      originalBucket: bucket,
+      path,
+    });
     throw new Error(`Upload failed: ${error.message}`);
   }
 
-  const { data: urlData } = supabase.storage
-    .from(bucket)
-    .getPublicUrl(data.path);
-
+  const { data: urlData } = supabase.storage.from(safeBucket).getPublicUrl(data.path);
   return urlData.publicUrl;
 }
 
@@ -75,7 +106,9 @@ export async function uploadFile(
 // ✅ Delete File
 // -------------------------------------------
 export async function deleteFile(bucket: string, path: string): Promise<void> {
-  const { error } = await supabase.storage.from(bucket).remove([path]);
+  const safeBucket = normalizeBucketName(bucket);
+
+  const { error } = await supabase.storage.from(safeBucket).remove([path]);
   if (error) {
     console.error("❌ File deletion failed:", error.message);
     throw new Error(`Delete failed: ${error.message}`);
@@ -137,9 +170,7 @@ export async function saveDriverLocation(locationData: {
   battery_level?: number;
   recorded_at: string;
 }) {
-  const { error } = await supabase
-    .from("driver_locations")
-    .insert([locationData]);
+  const { error } = await supabase.from("driver_locations").insert([locationData]);
 
   if (error) {
     console.error("❌ Error saving driver location:", error.message);
@@ -169,10 +200,7 @@ export function subscribeToDriverLocation(
 // -------------------------------------------
 // 💬 CHAT SYSTEM
 // -------------------------------------------
-export async function getOrCreateChatSession(
-  farmerId: string,
-  providerId: string
-) {
+export async function getOrCreateChatSession(farmerId: string, providerId: string) {
   const { data: existing } = await supabase
     .from("chat_sessions")
     .select("*")
@@ -238,10 +266,7 @@ export async function getChatMessages(sessionId: string) {
   return data;
 }
 
-export function subscribeToMessages(
-  sessionId: string,
-  callback: (msg: any) => void
-) {
+export function subscribeToMessages(sessionId: string, callback: (msg: any) => void) {
   return supabase
     .channel(`chat_${sessionId}`)
     .on(
@@ -261,11 +286,7 @@ export function subscribeToMessages(
 // 📅 BOOKINGS (direct client helper; still available if you need it)
 // -------------------------------------------
 export async function createBooking(bookingData: any) {
-  const { data, error } = await supabase
-    .from("bookings")
-    .insert([bookingData])
-    .select()
-    .single();
+  const { data, error } = await supabase.from("bookings").insert([bookingData]).select().single();
 
   if (error) {
     console.error("❌ Error creating booking:", error.message);

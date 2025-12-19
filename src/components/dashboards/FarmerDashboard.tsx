@@ -13,7 +13,7 @@ import { EscrowStatusBadge } from "../escrow/EscrowStatusBadge";
 import { DisputeModal } from "../escrow/DisputeModal";
 import { ReviewModal } from "../reviews/ReviewModal";
 
-import { escrowAPI, disputeAPI } from "../../lib/api";
+import { escrowAPI, disputeAPI, debugAPI } from "../../lib/api";
 import { supabase } from "../../lib/supabase";
 
 import {
@@ -112,11 +112,7 @@ const FarmerDashboardInner: React.FC<{
         return;
       }
 
-      const result = await escrowAPI.deposit(
-        request.id,
-        user.id,
-        amount
-      );
+      const result = await escrowAPI.deposit(request.id, user.id, amount);
 
       if (result?.authorization_url) {
         window.location.href = result.authorization_url;
@@ -128,6 +124,31 @@ const FarmerDashboardInner: React.FC<{
       alert("Could not start payment. Please try again.");
     } finally {
       setPayingEscrowId(null);
+    }
+  };
+
+  // -----------------------------------------------------------
+  // NEW — TEST ESCROW FUNDING STATE (DEBUG)
+// -----------------------------------------------------------
+  const [fundingTestEscrowId, setFundingTestEscrowId] = useState<string | null>(
+    null
+  );
+
+  const handleTestFundEscrow = async (bookingId: string) => {
+    try {
+      setFundingTestEscrowId(bookingId);
+      const res = await debugAPI.fundEscrow(bookingId);
+
+      if (res?.success) {
+        alert("✅ Test escrow funded. Escrow status should now show as 'funded'.");
+      } else {
+        alert("Failed to fund test escrow");
+      }
+    } catch (e: any) {
+      console.error("Error funding test escrow:", e);
+      alert(e?.message || "Error funding test escrow");
+    } finally {
+      setFundingTestEscrowId(null);
     }
   };
 
@@ -191,9 +212,13 @@ const FarmerDashboardInner: React.FC<{
   const activeRequests = useMemo(
     () =>
       farmerBookings.filter(({ request }) =>
-        ["pending", "accepted", "in-progress", "requested", "farmer_rejected"].includes(
-          request.status ?? "pending"
-        )
+        [
+          "pending",
+          "accepted",
+          "in-progress",
+          "requested",
+          "farmer_rejected",
+        ].includes(request.status ?? "pending")
       ),
     [farmerBookings]
   );
@@ -266,6 +291,7 @@ const FarmerDashboardInner: React.FC<{
 
   const handleDisputeCreated = () => {
     setShowDisputeModal(false);
+    setSelectedEscrow(null);
     loadDisputes();
   };
 
@@ -318,6 +344,16 @@ const FarmerDashboardInner: React.FC<{
         .eq("id", request.id);
 
       refreshStats();
+
+      // ✅ AFTER REJECTING: auto-open dispute for this booking's escrow
+      const match = farmerBookings.find(
+        ({ request: r }) => r.id === request.id
+      );
+      const escrowRecord = match?.escrowRecord;
+      if (escrowRecord) {
+        setSelectedEscrow(escrowRecord);
+        setShowDisputeModal(true);
+      }
     } catch (err) {
       console.error("Failed to reject completion:", err);
       alert("Could not reject completion. Please try again.");
@@ -380,7 +416,6 @@ const FarmerDashboardInner: React.FC<{
   // -----------------------------------------------------------
   return (
     <div className="min-h-screen bg-gray-50">
-
       {/* Top welcome bar */}
       <div className="bg-white border-b shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -388,7 +423,9 @@ const FarmerDashboardInner: React.FC<{
             <h1 className="text-2xl font-bold text-gray-900">
               Welcome back, {user.name}
             </h1>
-            <p className="text-gray-600">Manage your farm services and requests</p>
+            <p className="text-gray-600">
+              Manage your farm services and requests
+            </p>
           </div>
 
           <div className="flex gap-3">
@@ -412,7 +449,6 @@ const FarmerDashboardInner: React.FC<{
 
       {/* Inner content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
         {/* ACTIVE REQUESTS */}
         <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
           <div className="px-6 py-4 border-b">
@@ -552,6 +588,25 @@ const FarmerDashboardInner: React.FC<{
                         </button>
                       )}
 
+                      {/* 🔹 NEW: TEST ESCROW FUNDING BUTTON (VISIBLE ONLY IN ACTIVE REQUESTS) */}
+                      {(!request.escrowStatus ||
+                        request.escrowStatus === "pending") && (
+                        <button
+                          onClick={() => handleTestFundEscrow(request.id)}
+                          disabled={fundingTestEscrowId === request.id}
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
+                        >
+                          {fundingTestEscrowId === request.id ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Funding test escrow...
+                            </>
+                          ) : (
+                            <>Test: Fund Escrow</>
+                          )}
+                        </button>
+                      )}
+
                       {request.canReview && (
                         <button
                           onClick={() => handleOpenReview(request)}
@@ -593,181 +648,178 @@ const FarmerDashboardInner: React.FC<{
             </div>
 
             <div className="p-6 space-y-4">
-              {providerCompletedRequests.map(
-                ({ request, escrowRecord }) => (
-                  <div
-                    key={request.id}
-                    className="border border-gray-200 rounded-xl p-4 md:p-5"
-                  >
-                    <div className="flex justify-between items-start gap-4">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">
-                          {request.serviceTitle}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          Provider: {request.providerName}
-                        </p>
-                      </div>
-
-                      <div className="text-right">
-                        {request.price ? (
-                          <p className="text-lg font-bold text-green-600">
-                            ₵{request.price.toFixed(2)}
-                          </p>
-                        ) : null}
-
-                        <span className="inline-flex mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
-                          Awaiting your confirmation
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* TIME + LOCATION */}
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-400" />
-                        <span>
-                          Job date{" "}
-                          {request.dateNeeded
-                            ? new Date(request.dateNeeded).toLocaleString()
-                            : "Not set"}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400" />
-                        <span>{request.location}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-gray-400" />
-                        <span>
-                          Requested{" "}
-                          {request.createdAt
-                            ? new Date(request.createdAt).toLocaleString()
-                            : ""}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* PROVIDER NOTES */}
-                    {request.completionNotes && (
-                      <p className="mt-3 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
-                        <span className="font-semibold">Provider note: </span>
-                        {request.completionNotes}
+              {providerCompletedRequests.map(({ request, escrowRecord }) => (
+                <div
+                  key={request.id}
+                  className="border border-gray-200 rounded-xl p-4 md:p-5"
+                >
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">
+                        {request.serviceTitle}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Provider: {request.providerName}
                       </p>
-                    )}
+                    </div>
 
-                    {/* COMPLETION IMAGES */}
-                    {request.completionImages &&
-                      request.completionImages.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-4">
-                          {request.completionImages.map(
-                            (url: string, idx: number) => (
-                              <img
-                                key={idx}
-                                src={url}
-                                alt={`Completion ${idx + 1}`}
-                                className="w-24 h-24 object-cover rounded-lg border"
-                              />
-                            )
-                          )}
-                        </div>
-                      )}
+                    <div className="text-right">
+                      {request.price ? (
+                        <p className="text-lg font-bold text-green-600">
+                          ₵{request.price.toFixed(2)}
+                        </p>
+                      ) : null}
 
-                    {/* ACTIONS */}
-                    <div className="mt-4 flex flex-wrap gap-2 items-center">
-                      <EscrowStatusBadge
-                        status={request.escrowStatus ?? "pending"}
-                      />
-
-                      {/* NEW: VIEW TRACKING HISTORY */}
-                      {request.status === "provider_completed" && (
-                        <button
-                          onClick={() => openTracking(request.id)}
-                          className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
-                        >
-                          <MapPin className="w-4 h-4 mr-2" />
-                          View tracking history
-                        </button>
-                      )}
-
-                      {/* REVIEW IMAGES MODAL */}
-                      {request.completionImages &&
-                        request.completionImages.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedCompletionBooking({
-                                id: request.id,
-                                completion_photos:
-                                  request.completionImages,
-                              })
-                            }
-                            className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
-                          >
-                            Review completion
-                          </button>
-                        )}
-
-                      {/* CONFIRM BUTTON */}
-                      <button
-                        onClick={() => handleConfirmCompletion(request)}
-                        disabled={
-                          confirmingBookingId === request.id ||
-                          rejectingBookingId === request.id
-                        }
-                        className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
-                      >
-                        {confirmingBookingId === request.id ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Confirming...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            This is correct — confirm
-                          </>
-                        )}
-                      </button>
-
-                      {/* REJECT BUTTON */}
-                      <button
-                        onClick={() => handleRejectCompletion(request)}
-                        disabled={
-                          confirmingBookingId === request.id ||
-                          rejectingBookingId === request.id
-                        }
-                        className="inline-flex items-center px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 disabled:opacity-50"
-                      >
-                        {rejectingBookingId === request.id ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <X className="w-4 h-4 mr-2" />
-                            This is not correct
-                          </>
-                        )}
-                      </button>
-
-                      {/* DISPUTE BUTTON */}
-                      {escrowRecord && (
-                        <button
-                          onClick={() => handleOpenDispute(escrowRecord)}
-                          className="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-red-200 text-sm font-semibold text-red-700 hover:bg-red-50"
-                        >
-                          <AlertCircle className="w-4 h-4 mr-2" />
-                          Raise dispute
-                        </button>
-                      )}
+                      <span className="inline-flex mt-1 px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                        Awaiting your confirmation
+                      </span>
                     </div>
                   </div>
-                )
-              )}
+
+                  {/* TIME + LOCATION */}
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-gray-600">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-gray-400" />
+                      <span>
+                        Job date{" "}
+                        {request.dateNeeded
+                          ? new Date(request.dateNeeded).toLocaleString()
+                          : "Not set"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-gray-400" />
+                      <span>{request.location}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-gray-400" />
+                      <span>
+                        Requested{" "}
+                        {request.createdAt
+                          ? new Date(request.createdAt).toLocaleString()
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* PROVIDER NOTES */}
+                  {request.completionNotes && (
+                    <p className="mt-3 text-sm text-gray-700 bg-gray-50 rounded-lg p-3">
+                      <span className="font-semibold">Provider note: </span>
+                      {request.completionNotes}
+                    </p>
+                  )}
+
+                  {/* COMPLETION IMAGES */}
+                  {request.completionImages &&
+                    request.completionImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-4">
+                        {request.completionImages.map(
+                          (url: string, idx: number) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`Completion ${idx + 1}`}
+                              className="w-24 h-24 object-cover rounded-lg border"
+                            />
+                          )
+                        )}
+                      </div>
+                    )}
+
+                  {/* ACTIONS */}
+                  <div className="mt-4 flex flex-wrap gap-2 items-center">
+                    <EscrowStatusBadge
+                      status={request.escrowStatus ?? "pending"}
+                    />
+
+                    {/* NEW: VIEW TRACKING HISTORY */}
+                    {request.status === "provider_completed" && (
+                      <button
+                        onClick={() => openTracking(request.id)}
+                        className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                      >
+                        <MapPin className="w-4 h-4 mr-2" />
+                        View tracking history
+                      </button>
+                    )}
+
+                    {/* REVIEW IMAGES MODAL */}
+                    {request.completionImages &&
+                      request.completionImages.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedCompletionBooking({
+                              id: request.id,
+                              completion_photos: request.completionImages,
+                            })
+                          }
+                          className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+                        >
+                          Review completion
+                        </button>
+                      )}
+
+                    {/* CONFIRM BUTTON */}
+                    <button
+                      onClick={() => handleConfirmCompletion(request)}
+                      disabled={
+                        confirmingBookingId === request.id ||
+                        rejectingBookingId === request.id
+                      }
+                      className="inline-flex items-center px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {confirmingBookingId === request.id ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Confirming...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          This is correct — confirm
+                        </>
+                      )}
+                    </button>
+
+                    {/* REJECT BUTTON */}
+                    <button
+                      onClick={() => handleRejectCompletion(request)}
+                      disabled={
+                        confirmingBookingId === request.id ||
+                        rejectingBookingId === request.id
+                      }
+                      className="inline-flex items-center px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 disabled:opacity-50"
+                    >
+                      {rejectingBookingId === request.id ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-4 h-4 mr-2" />
+                          This is not correct
+                        </>
+                      )}
+                    </button>
+
+                    {/* DISPUTE BUTTON */}
+                    {escrowRecord && (
+                      <button
+                        onClick={() => handleOpenDispute(escrowRecord)}
+                        className="inline-flex items-center px-4 py-2 rounded-lg bg-white border border-red-200 text-sm font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        Raise dispute
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -925,11 +977,14 @@ const FarmerDashboardInner: React.FC<{
       {/* DISPUTE MODAL */}
       {showDisputeModal && selectedEscrow && (
         <DisputeModal
-          isOpen={showDisputeModal}
-          escrow={selectedEscrow}
-          currentUserId={user?.id ?? ""}
-          onClose={() => setShowDisputeModal(false)}
-          onDisputeCreated={handleDisputeCreated}
+          escrowId={selectedEscrow.id}
+          userId={user?.id ?? ""}
+          bookingId={selectedEscrow.booking_id}
+          onClose={() => {
+            setShowDisputeModal(false);
+            setSelectedEscrow(null);
+          }}
+          onSuccess={handleDisputeCreated}
         />
       )}
     </div>

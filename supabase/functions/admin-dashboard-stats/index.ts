@@ -1,9 +1,10 @@
+// admin-dashboard-stats/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
@@ -14,92 +15,110 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const url = new URL(req.url);
-    const admin_id = url.searchParams.get('admin_id');
+    // 🔥 Accept POST body instead of GET query
+    const { admin_id } = await req.json();
 
     if (!admin_id) {
-      throw new Error('admin_id is required');
+      throw new Error("admin_id is required");
     }
 
     // Verify admin role
     const { data: admin } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', admin_id)
+      .from("users")
+      .select("role")
+      .eq("id", admin_id)
       .maybeSingle();
 
-    if (!admin || admin.role !== 'admin') {
-      throw new Error('Unauthorized: Admin access required');
+    if (!admin || admin.role !== "admin") {
+      throw new Error("Unauthorized: Admin access required");
     }
 
-    // Get active bookings count
+    // -------------------------------------------------------------------
+    // 📊 COUNT ACTIVE BOOKINGS
+    // -------------------------------------------------------------------
     const { count: activeBookings } = await supabase
-      .from('bookings')
-      .select('*', { count: 'exact', head: true })
-      .in('status', ['pending', 'accepted', 'in-progress']);
+      .from("bookings")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["pending", "accepted", "in-progress"]);
 
-    // Get completed bookings count
+    // 📊 COUNT COMPLETED BOOKINGS
     const { count: completedBookings } = await supabase
-      .from('bookings')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'completed');
+      .from("bookings")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "completed");
 
-    // Get total revenue (sum of completed escrow)
+    // -------------------------------------------------------------------
+    // 💰 TOTAL REVENUE
+    // -------------------------------------------------------------------
     const { data: revenueData } = await supabase
-      .from('escrow_wallet')
-      .select('amount')
-      .in('status', ['released', 'completed']);
+      .from("escrow_wallet")
+      .select("amount")
+      .in("status", ["released", "completed"]);
 
-    const totalRevenue = revenueData?.reduce((sum, row) => sum + parseFloat(row.amount), 0) || 0;
+    const totalRevenue =
+      revenueData?.reduce((sum, row) => sum + parseFloat(row.amount), 0) || 0;
 
-    // Get open disputes count
+    // -------------------------------------------------------------------
+    // ⚠ OPEN DISPUTES
+    // -------------------------------------------------------------------
     const { count: openDisputes } = await supabase
-      .from('disputes')
-      .select('*', { count: 'exact', head: true })
-      .in('status', ['open', 'investigating']);
+      .from("disputes")
+      .select("*", { count: "exact", head: true })
+      .in("status", ["open", "investigating"]);
 
-    // Get total users by role
+    // -------------------------------------------------------------------
+    // 👤 USER COUNT
+    // -------------------------------------------------------------------
     const { count: totalFarmers } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .eq('role', 'farmer');
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "farmer");
 
     const { count: totalProviders } = await supabase
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-      .eq('role', 'provider');
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "provider");
 
-    // Get recent activities (last 10 bookings)
+    // -------------------------------------------------------------------
+    // 🕒 RECENT BOOKINGS
+    // -------------------------------------------------------------------
     const { data: recentBookings } = await supabase
-      .from('bookings')
-      .select('id, status, created_at, farmer:farmer_id(name), provider:provider_id(name), services(title)')
-      .order('created_at', { ascending: false })
+      .from("bookings")
+      .select(`
+        id,
+        status,
+        created_at,
+        farmer:farmer_id(name),
+        provider:provider_id(name),
+        services:service_id(title)
+      `)
+      .order("created_at", { ascending: false })
       .limit(10);
 
     return new Response(
       JSON.stringify({
         success: true,
         stats: {
-          activeBookings: activeBookings || 0,
-          completedBookings: completedBookings || 0,
+          activeBookings,
+          completedBookings,
           totalRevenue: totalRevenue.toFixed(2),
-          openDisputes: openDisputes || 0,
-          totalFarmers: totalFarmers || 0,
-          totalProviders: totalProviders || 0,
+          openDisputes,
+          totalFarmers,
+          totalProviders,
         },
         recentBookings: recentBookings || [],
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error) {
-    console.error('Admin dashboard stats error:', error);
+  } catch (error: any) {
+    console.error("Admin dashboard stats error:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
