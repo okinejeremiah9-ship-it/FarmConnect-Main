@@ -18,13 +18,13 @@ export interface Location {
 /** Active tracking session for a driver */
 export interface TrackingSession {
   id: string;
-  booking_id: string;
+  booking_id: string; // uuid string from DB
   driver_id: string;
   driver_name?: string;
   driver_phone?: string;
   status: "active" | "paused" | "completed";
   started_at: string;
-  ended_at?: string;
+  ended_at?: string | null;
   current_location?: Location;
 }
 
@@ -41,36 +41,37 @@ export class TrackingAPI {
     const { data, error } = await supabase
       .from("tracking_sessions")
       .insert({
-        booking_id: bookingId,
+        booking_id: bookingId, // uuid string
         driver_id: driverId,
-        driver_name: driverName,
-        driver_phone: driverPhone,
+        driver_name: driverName ?? null,
+        driver_phone: driverPhone ?? null,
         status: "active",
         started_at: new Date().toISOString(),
       })
-      .select()
+      .select("*")
       .single();
 
     if (error) throw new Error(`Create session failed: ${error.message}`);
-    return data;
+    return data as TrackingSession;
   }
 
   /**
    * ✅ Fetch session details by session ID
+   * FIX: use maybeSingle() so 0 rows doesn't throw 406
    */
   static async getSession(sessionId: string): Promise<TrackingSession | null> {
     const { data, error } = await supabase
       .from("tracking_sessions")
       .select("*")
       .eq("id", sessionId)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("Error fetching session:", error);
       return null;
     }
 
-    return data;
+    return (data as TrackingSession) ?? null;
   }
 
   /**
@@ -107,18 +108,19 @@ export class TrackingAPI {
       .from("tracking_locations")
       .select("*")
       .eq("session_id", sessionId)
-      .order("recorded_at", { ascending: false });
+      .order("recorded_at", { ascending: true }); // oldest -> newest helps route
 
     if (error) {
       console.error("Error fetching locations:", error);
       return [];
     }
 
-    return data || [];
+    return (data as Location[]) || [];
   }
 
   /**
    * ✅ Fetch latest location for a session
+   * FIX: use maybeSingle() so 0 rows doesn't throw 406
    */
   static async getLatestLocation(sessionId: string): Promise<Location | null> {
     const { data, error } = await supabase
@@ -127,18 +129,19 @@ export class TrackingAPI {
       .eq("session_id", sessionId)
       .order("recorded_at", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("Error fetching latest location:", error);
       return null;
     }
 
-    return data;
+    return (data as Location) ?? null;
   }
 
   /**
    * ✅ Fetch a tracking session by booking ID
+   * FIX: maybeSingle() to avoid 406 when not created yet
    */
   static async getSessionByBookingId(
     bookingId: string
@@ -149,14 +152,14 @@ export class TrackingAPI {
       .eq("booking_id", bookingId)
       .order("created_at", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("Error fetching session by booking:", error);
       return null;
     }
 
-    return data;
+    return (data as TrackingSession) ?? null;
   }
 
   /**
@@ -180,7 +183,6 @@ export class TrackingAPI {
       )
       .subscribe();
 
-    // Return an unsubscribe function for cleanup
     return () => {
       supabase.removeChannel(channel);
     };
@@ -268,7 +270,7 @@ export class TrackingAPI {
         return Math.round(battery.level * 100);
       }
     } catch {
-      // silently ignore
+      // ignore
     }
     return null;
   }
