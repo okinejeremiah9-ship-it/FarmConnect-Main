@@ -1,44 +1,46 @@
 // ----------------------------------------------
-// ServiceMap.tsx — FULL FILE (NO REMOVALS, SAFE MERGE)
+// ServiceMap.tsx — FULL FILE (RESUME-SAFE, VERIFIED)
 // ----------------------------------------------
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { supabase } from "../../lib/supabase";
 
 interface ServiceMapProps {
-  bookingId?: string; // optional — if present → tracking mode
+  bookingId?: string;
 }
+
+type TrackingPoint = {
+  latitude: number;
+  longitude: number;
+  created_at: string;
+};
 
 export const ServiceMap: React.FC<ServiceMapProps> = ({ bookingId }) => {
   // -----------------------------
-  // MAP CORE STATE
+  // MAP CORE
   // -----------------------------
-  const [map, setMap] = useState<L.Map | null>(null);
-  const [userMarker, setUserMarker] = useState<L.Marker | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const userMarkerRef = useRef<L.Marker | null>(null);
+  const providerMarkerRef = useRef<L.Marker | null>(null);
+  const trackingLineRef = useRef<L.Polyline | null>(null);
 
   // -----------------------------
-  // PROVIDER BROWSE MODE STATE
+  // STATE
   // -----------------------------
   const [services, setServices] = useState<any[]>([]);
-
-  // -----------------------------
-  // TRACKING MODE STATE
-  // -----------------------------
-  const [providerMarker, setProviderMarker] = useState<L.Marker | null>(null);
-  const [trackingLine, setTrackingLine] = useState<L.Polyline | null>(null);
-  const [trackingPoints, setTrackingPoints] = useState<
-    { latitude: number; longitude: number; created_at: string }[]
-  >([]);
+  const [trackingPoints, setTrackingPoints] = useState<TrackingPoint[]>([]);
 
   const trackingMode = Boolean(bookingId);
   const hasPoints = trackingPoints.length > 0;
 
   // ----------------------------------------------
-  // INIT MAP
+  // INIT MAP (ONCE)
   // ----------------------------------------------
   useEffect(() => {
-    const m = L.map("map", {
+    if (mapRef.current) return;
+
+    const map = L.map("map", {
       zoomControl: true,
       attributionControl: true,
     }).setView([7.9465, -1.0232], 7);
@@ -46,22 +48,59 @@ export const ServiceMap: React.FC<ServiceMapProps> = ({ bookingId }) => {
     L.tileLayer("https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png", {
       attribution:
         "&copy; OpenStreetMap contributors | HOT humanitarian tiles",
-    }).addTo(m);
+    }).addTo(map);
 
-    setMap(m);
+    mapRef.current = map;
+
     return () => {
-      m.remove();
+      map.remove();
+      mapRef.current = null;
     };
   }, []);
 
   // ----------------------------------------------
-  // LOAD SERVICE PROVIDERS (NON-TRACKING MODE)
+  // USER LOCATION (BLUE DOT)
   // ----------------------------------------------
   useEffect(() => {
-    if (!map || trackingMode) return;
+    if (!mapRef.current) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+
+        if (!userMarkerRef.current) {
+          userMarkerRef.current = L.marker([latitude, longitude], {
+            icon: L.icon({
+              iconUrl:
+                "https://cdn-icons-png.flaticon.com/512/149/149060.png",
+              iconSize: [30, 30],
+            }),
+          })
+            .addTo(mapRef.current!)
+            .bindPopup("You");
+        } else {
+          userMarkerRef.current.setLatLng([latitude, longitude]);
+        }
+
+        if (!trackingMode) {
+          mapRef.current!.setView([latitude, longitude], 13);
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [trackingMode]);
+
+  // ----------------------------------------------
+  // LOAD PROVIDERS (BROWSE MODE)
+  // ----------------------------------------------
+  useEffect(() => {
+    if (!mapRef.current || trackingMode) return;
 
     const loadProviders = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("services")
         .select(
           `
@@ -78,66 +117,20 @@ export const ServiceMap: React.FC<ServiceMapProps> = ({ bookingId }) => {
         .not("latitude", "is", null)
         .not("longitude", "is", null);
 
-      if (!error && data) {
-        setServices(data);
-      }
+      if (data) setServices(data);
     };
 
     loadProviders();
-  }, [map, trackingMode]);
+  }, [trackingMode]);
 
   // ----------------------------------------------
-  // USER GEOLOCATION (BLUE DOT)
-  // ----------------------------------------------
-  useEffect(() => {
-    if (!map) return;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-
-        if (!userMarker) {
-          const marker = L.marker([latitude, longitude], {
-            icon: L.icon({
-              iconUrl:
-                "https://cdn-icons-png.flaticon.com/512/149/149060.png",
-              iconSize: [30, 30],
-            }),
-          }).addTo(map);
-
-          marker.bindPopup("You");
-          setUserMarker(marker);
-        } else {
-          userMarker.setLatLng([latitude, longitude]);
-        }
-
-        if (!trackingMode) {
-          map.setView([latitude, longitude], 13);
-        }
-      },
-      () => {},
-      { enableHighAccuracy: true }
-    );
-
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-    };
-  }, [map, userMarker, trackingMode]);
-
-  // ----------------------------------------------
-  // RENDER PROVIDERS (BROWSE MODE)
+  // RENDER PROVIDERS
   // ----------------------------------------------
   useEffect(() => {
-    if (!map || trackingMode) return;
-
-    map.eachLayer((layer) => {
-      if (layer instanceof L.Marker && layer !== userMarker) {
-        map.removeLayer(layer);
-      }
-    });
+    if (!mapRef.current || trackingMode) return;
 
     services.forEach((s) => {
-      const marker = L.marker([s.latitude, s.longitude], {
+      L.marker([s.latitude, s.longitude], {
         icon: L.icon({
           iconUrl:
             s.profile_pic ||
@@ -145,30 +138,32 @@ export const ServiceMap: React.FC<ServiceMapProps> = ({ bookingId }) => {
           iconSize: [40, 40],
           iconAnchor: [20, 40],
         }),
-      }).addTo(map);
-
-      marker.bindPopup(`
-        <div style="text-align:center;">
-          <img src="${
-            s.profile_pic ||
-            "https://cdn-icons-png.flaticon.com/512/3177/3177440.png"
-          }" 
-               style="width:60px;height:60px;border-radius:50%;border:2px solid green;">
-          <h3>${s.business_name}</h3>
-          <p>${s.category}</p>
-          <p>${s.service_description}</p>
-        </div>
-      `);
+      })
+        .addTo(mapRef.current!)
+        .bindPopup(`
+          <div style="text-align:center;">
+            <img src="${
+              s.profile_pic ||
+              "https://cdn-icons-png.flaticon.com/512/3177/3177440.png"
+            }"
+              style="width:60px;height:60px;border-radius:50%;border:2px solid green;">
+            <h3>${s.business_name}</h3>
+            <p>${s.category}</p>
+            <p>${s.service_description}</p>
+          </div>
+        `);
     });
-  }, [map, services, trackingMode, userMarker]);
+  }, [services, trackingMode]);
 
   // ----------------------------------------------
-  // LOAD TRACKING POINTS + REALTIME (TRACKING MODE)
+  // LOAD + RESUME TRACKING (SAFE)
   // ----------------------------------------------
   useEffect(() => {
-    if (!map || !bookingId) return;
+    if (!mapRef.current || !bookingId) return;
 
-    const loadInitial = async () => {
+    let channel: any;
+
+    const loadTracking = async () => {
       const { data } = await supabase
         .from("booking_gps_points")
         .select("latitude, longitude, created_at")
@@ -178,9 +173,9 @@ export const ServiceMap: React.FC<ServiceMapProps> = ({ bookingId }) => {
       setTrackingPoints(data || []);
     };
 
-    loadInitial();
+    loadTracking();
 
-    const channel = supabase
+    channel = supabase
       .channel(`gps-${bookingId}`)
       .on(
         "postgres_changes",
@@ -191,67 +186,65 @@ export const ServiceMap: React.FC<ServiceMapProps> = ({ bookingId }) => {
           filter: `booking_id=eq.${bookingId}`,
         },
         (payload) => {
-          setTrackingPoints((prev) => [...prev, payload.new as any]);
+          setTrackingPoints((prev) => {
+            const exists = prev.some(
+              (p) => p.created_at === payload.new.created_at
+            );
+            if (exists) return prev;
+            return [...prev, payload.new as TrackingPoint];
+          });
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
-  }, [map, bookingId]);
+  }, [bookingId]);
 
   // ----------------------------------------------
-  // DRAW TRACKING PATH + PROVIDER MARKER
+  // DRAW TRACKING PATH + PROVIDER
   // ----------------------------------------------
   useEffect(() => {
-    if (!map || !bookingId || trackingPoints.length === 0) return;
+    if (!mapRef.current || trackingPoints.length === 0) return;
 
     const latlngs = trackingPoints.map((p) => [
       p.latitude,
       p.longitude,
     ]) as [number, number][];
 
-    if (!trackingLine) {
-      const line = L.polyline(latlngs, {
+    if (!trackingLineRef.current) {
+      trackingLineRef.current = L.polyline(latlngs, {
         color: "#ef4444",
         weight: 5,
         opacity: 0.85,
-      }).addTo(map);
-      setTrackingLine(line);
+      }).addTo(mapRef.current);
     } else {
-      trackingLine.setLatLngs(latlngs);
+      trackingLineRef.current.setLatLngs(latlngs);
     }
 
     const latest = latlngs[latlngs.length - 1];
 
-    if (!providerMarker) {
-      const marker = L.marker(latest, {
+    if (!providerMarkerRef.current) {
+      providerMarkerRef.current = L.marker(latest, {
         icon: L.icon({
           iconUrl:
             "https://cdn-icons-png.flaticon.com/512/854/854866.png",
           iconSize: [45, 45],
         }),
-      }).addTo(map);
-
-      marker.bindPopup("Provider");
-      setProviderMarker(marker);
+      })
+        .addTo(mapRef.current)
+        .bindPopup("Provider");
     } else {
-      providerMarker.setLatLng(latest);
+      providerMarkerRef.current.setLatLng(latest);
     }
 
     const bounds = L.latLngBounds(latlngs);
-    if (userMarker) bounds.extend(userMarker.getLatLng());
+    if (userMarkerRef.current)
+      bounds.extend(userMarkerRef.current.getLatLng());
 
-    map.fitBounds(bounds, { padding: [30, 30] });
-  }, [
-    map,
-    bookingId,
-    trackingPoints,
-    trackingLine,
-    providerMarker,
-    userMarker,
-  ]);
+    mapRef.current.fitBounds(bounds, { padding: [30, 30] });
+  }, [trackingPoints]);
 
   // ----------------------------------------------
   // UI

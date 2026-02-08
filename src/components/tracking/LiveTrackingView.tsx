@@ -1,7 +1,7 @@
 // Location: src/components/tracking/LiveTrackingView.tsx
 // Purpose: Display real-time driver location on OpenStreetMap using live Supabase updates
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -21,7 +21,8 @@ import {
 } from "../../lib/api/trackingAPI";
 import { supabase } from "../../lib/supabase";
 
-// Fix default marker icon issue with Leaflet + Vite
+/* ---------------- Leaflet icon fix (unchanged) ---------------- */
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: new URL(
@@ -38,12 +39,15 @@ L.Icon.Default.mergeOptions({
   ).toString(),
 });
 
+/* ---------------- Types ---------------- */
+
 interface LiveTrackingViewProps {
   sessionId?: string;
   onBack?: () => void;
 }
 
-// Helper component to move map as driver updates position
+/* ---------------- Map auto-center ---------------- */
+
 const MapAutoCenter: React.FC<{ lat: number; lng: number }> = ({
   lat,
   lng,
@@ -55,7 +59,8 @@ const MapAutoCenter: React.FC<{ lat: number; lng: number }> = ({
   return null;
 };
 
-// Bearing calculator for icon rotation
+/* ---------------- Bearing calculation ---------------- */
+
 const calculateBearing = (
   lat1: number,
   lon1: number,
@@ -71,14 +76,16 @@ const calculateBearing = (
   const φ2 = toRad(lat2);
   const λ1 = toRad(lon1);
   const λ2 = toRad(lon2);
+
   const y = Math.sin(λ2 - λ1) * Math.cos(φ2);
   const x =
     Math.cos(φ1) * Math.sin(φ2) -
     Math.sin(φ1) * Math.cos(φ2) * Math.cos(λ2 - λ1);
-  const θ = Math.atan2(y, x);
-  let brng = (toDeg(θ) + 360) % 360;
-  return brng;
+
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
 };
+
+/* ================== MAIN COMPONENT ================== */
 
 const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
   sessionId,
@@ -93,38 +100,49 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
   const [bearing, setBearing] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 🧭 Load tracking session info
+  const lastLocationRef = useRef<Location | null>(null);
+
+  /* -------- Load session metadata -------- */
+
   useEffect(() => {
+    if (!activeSessionId) return;
+
     const loadSession = async () => {
-      if (!activeSessionId) return;
       const data = await TrackingAPI.getSession(activeSessionId);
       if (!data) {
-        alert("Invalid tracking session ID.");
+        console.warn("Tracking session exists but access may be restricted.");
         return;
       }
       setSession(data);
     };
+
     loadSession();
   }, [activeSessionId]);
 
-  // 📡 Load history + latest location + subscribe to real-time updates
+  /* -------- Load initial data + realtime -------- */
+
   useEffect(() => {
     if (!activeSessionId) return;
 
+    let isMounted = true;
+
     const loadInitial = async () => {
       try {
-        // Load all historical locations to draw full route
         const allLocations = await TrackingAPI.getLocations(activeSessionId);
-        if (allLocations && allLocations.length > 0) {
-          // Sort oldest → newest
+
+        if (!isMounted) return;
+
+        if (allLocations?.length) {
           const ordered = [...allLocations].sort(
             (a, b) =>
               new Date(a.recorded_at).getTime() -
               new Date(b.recorded_at).getTime()
           );
+
           setRoute(ordered);
           const last = ordered[ordered.length - 1];
           setLocation(last);
+          lastLocationRef.current = last;
 
           if (ordered.length > 1) {
             const prev = ordered[ordered.length - 2];
@@ -138,25 +156,24 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
             );
           }
         } else {
-          // Fallback to single latest location if no history
           const latest = await TrackingAPI.getLatestLocation(activeSessionId);
           if (latest) {
             setLocation(latest);
             setRoute([latest]);
+            lastLocationRef.current = latest;
           }
         }
       } catch (err) {
         console.error("Failed to load initial location:", err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     loadInitial();
 
-    // 🔔 Supabase Realtime subscription for updates
     const channel = supabase
-      .channel(`realtime_tracking_${activeSessionId}`)
+      .channel(`tracking_${activeSessionId}`)
       .on(
         "postgres_changes",
         {
@@ -167,32 +184,35 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
         },
         (payload) => {
           const newLocation = payload.new as Location;
+          const prev = lastLocationRef.current;
+
+          if (prev) {
+            setBearing(
+              calculateBearing(
+                prev.latitude,
+                prev.longitude,
+                newLocation.latitude,
+                newLocation.longitude
+              )
+            );
+          }
+
+          lastLocationRef.current = newLocation;
           setLocation(newLocation);
-          setRoute((prev) => {
-            const next = [...prev, newLocation];
-            if (prev.length > 0) {
-              const last = prev[prev.length - 1];
-              setBearing(
-                calculateBearing(
-                  last.latitude,
-                  last.longitude,
-                  newLocation.latitude,
-                  newLocation.longitude
-                )
-              );
-            }
-            return next;
-          });
+
+          setRoute((prevRoute) => [...prevRoute, newLocation]);
         }
       )
       .subscribe();
 
     return () => {
+      isMounted = false;
       supabase.removeChannel(channel);
     };
   }, [activeSessionId]);
 
-  // Bolt/Uber-like dark map + green route positions
+  /* -------- Derived route positions -------- */
+
   const routePositions = useMemo(
     () =>
       route.map(
@@ -201,9 +221,9 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
     [route]
   );
 
-  // Custom rotating "vehicle" icon (green circle with tractor emoji)
+  /* -------- Driver icon -------- */
+
   const driverIcon = useMemo(() => {
-    const angle = bearing ?? 0;
     return L.divIcon({
       className: "driver-marker-icon",
       html: `
@@ -216,7 +236,7 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
           align-items: center;
           justify-content: center;
           box-shadow: 0 0 10px rgba(0,0,0,0.45);
-          transform: rotate(${angle}deg);
+          transform: rotate(${bearing ?? 0}deg);
           transition: transform 0.2s linear;
         ">
           <span style="font-size: 18px;">🚜</span>
@@ -227,9 +247,12 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
     });
   }, [bearing]);
 
+  /* ================== UI ================== */
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-4">
       <div className="max-w-2xl mx-auto">
+
         {/* Header */}
         <div className="flex items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-3">
@@ -265,40 +288,31 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
             zoom={15}
             className="w-full h-[450px] rounded-2xl shadow-xl border border-slate-800 overflow-hidden"
           >
-            {/* Dark, Uber-style tiles */}
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> & <a href="https://carto.com/">CARTO</a>'
+              attribution='&copy; OpenStreetMap & CARTO'
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
 
-            {/* Route polyline */}
             {routePositions.length > 1 && (
               <Polyline
                 positions={routePositions}
-                pathOptions={{
-                  color: "#22c55e",
-                  weight: 5,
-                  opacity: 0.9,
-                }}
+                pathOptions={{ color: "#22c55e", weight: 5, opacity: 0.9 }}
               />
             )}
 
-            {/* Moving, rotating driver marker */}
             <Marker
               position={[location.latitude, location.longitude]}
               icon={driverIcon}
             >
               <Popup>
                 <div className="text-sm">
-                  <strong>Driver Location</strong>
-                  <br />
+                  <strong>Driver Location</strong><br />
                   Lat: {location.latitude.toFixed(6)} <br />
                   Lng: {location.longitude.toFixed(6)} <br />
                   Speed: {location.speed?.toFixed(1) || 0} m/s <br />
                   Accuracy: ±{Math.round(location.accuracy)}m <br />
                   Battery: {location.battery_level ?? "--"}% <br />
-                  Time:{" "}
-                  {new Date(location.recorded_at).toLocaleTimeString()}
+                  Time: {new Date(location.recorded_at).toLocaleTimeString()}
                 </div>
               </Popup>
             </Marker>
@@ -310,33 +324,7 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
           </MapContainer>
         ) : (
           <div className="text-center text-slate-300 mt-8">
-            No location data available yet. Driver may not have started tracking.
-          </div>
-        )}
-
-        {/* Info Card */}
-        {location && (
-          <div className="bg-slate-900/80 rounded-xl p-4 shadow-lg mt-4 border border-slate-800">
-            <div className="flex items-center gap-2 mb-2">
-              <MapPin className="w-5 h-5 text-green-400" />
-              <h2 className="font-semibold text-slate-100 text-sm">
-                Current Driver Location
-              </h2>
-            </div>
-            <div className="text-xs text-slate-300 space-y-1">
-              <p>Latitude: {location.latitude.toFixed(6)}</p>
-              <p>Longitude: {location.longitude.toFixed(6)}</p>
-              <p>Speed: {location.speed?.toFixed(1) || 0} m/s</p>
-              <p>Accuracy: ±{Math.round(location.accuracy)}m</p>
-              <p>Battery: {location.battery_level ?? "--"}%</p>
-              <p>
-                Last updated:{" "}
-                {new Date(location.recorded_at).toLocaleTimeString()}
-              </p>
-              {bearing !== null && (
-                <p>Heading: {Math.round(bearing)}°</p>
-              )}
-            </div>
+            No location data available yet.
           </div>
         )}
       </div>
