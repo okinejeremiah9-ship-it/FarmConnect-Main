@@ -12,7 +12,7 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { MapPin, Navigation } from "lucide-react";
+import { Navigation } from "lucide-react";
 import { useParams } from "react-router-dom";
 import {
   TrackingAPI,
@@ -21,7 +21,7 @@ import {
 } from "../../lib/api/trackingAPI";
 import { supabase } from "../../lib/supabase";
 
-/* ---------------- Leaflet icon fix (unchanged) ---------------- */
+/* ---------------- Leaflet icon fix (UNCHANGED) ---------------- */
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -99,21 +99,46 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
   const [route, setRoute] = useState<Location[]>([]);
   const [bearing, setBearing] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessRestricted, setAccessRestricted] = useState(false);
 
   const lastLocationRef = useRef<Location | null>(null);
 
-  /* -------- Load session metadata -------- */
+  /* ---------------- DEBUG ---------------- */
 
   useEffect(() => {
-    if (!activeSessionId) return;
+    console.log("🔍 LiveTrackingView mounted");
+    console.log("🔍 sessionId prop:", sessionId);
+    console.log("🔍 paramSessionId:", paramSessionId);
+    console.log("🔍 activeSessionId:", activeSessionId);
+  }, [sessionId, paramSessionId, activeSessionId]);
+
+  /* -------- Load session metadata (SAFE) -------- */
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      console.error("❌ No tracking session ID provided");
+      setLoading(false);
+      return;
+    }
 
     const loadSession = async () => {
-      const data = await TrackingAPI.getSession(activeSessionId);
-      if (!data) {
-        console.warn("Tracking session exists but access may be restricted.");
-        return;
+      try {
+        const data = await TrackingAPI.getSession(activeSessionId);
+
+        if (!data) {
+          console.warn(
+            "⚠️ Tracking session exists but access may be restricted."
+          );
+          setAccessRestricted(true);
+          return;
+        }
+
+        setSession(data);
+        setAccessRestricted(false);
+      } catch (err) {
+        console.error("❌ Failed to load tracking session:", err);
+        setAccessRestricted(true);
       }
-      setSession(data);
     };
 
     loadSession();
@@ -122,7 +147,7 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
   /* -------- Load initial data + realtime -------- */
 
   useEffect(() => {
-    if (!activeSessionId) return;
+    if (!activeSessionId || accessRestricted) return;
 
     let isMounted = true;
 
@@ -164,7 +189,7 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
           }
         }
       } catch (err) {
-        console.error("Failed to load initial location:", err);
+        console.error("❌ Failed to load initial location:", err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -199,7 +224,6 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
 
           lastLocationRef.current = newLocation;
           setLocation(newLocation);
-
           setRoute((prevRoute) => [...prevRoute, newLocation]);
         }
       )
@@ -209,7 +233,7 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, accessRestricted]);
 
   /* -------- Derived route positions -------- */
 
@@ -248,6 +272,22 @@ const LiveTrackingView: React.FC<LiveTrackingViewProps> = ({
   }, [bearing]);
 
   /* ================== UI ================== */
+
+  if (accessRestricted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-200">
+        <div className="text-center max-w-md">
+          <h2 className="text-lg font-semibold mb-2">
+            Tracking session found
+          </h2>
+          <p className="text-sm text-slate-400">
+            This tracking session exists, but your account does not currently
+            have permission to view live tracking data.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-4">
