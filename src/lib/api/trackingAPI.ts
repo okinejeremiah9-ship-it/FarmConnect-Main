@@ -1,10 +1,10 @@
 // Location: src/lib/api/trackingAPI.ts
-// Purpose: Complete GPS tracking API with real-time updates via Supabase
-// Status: SAFE REWRITE – functionality preserved and hardened
+// Purpose: GPS tracking API with bookingId-first logic & real-time updates via Supabase
 
 import { supabase } from "../supabase";
 
-/** Location model structure in Supabase */
+/* ---------------- Types ---------------- */
+
 export interface Location {
   id?: string;
   session_id: string;
@@ -16,7 +16,6 @@ export interface Location {
   speed?: number;
 }
 
-/** Active tracking session for a driver */
 export interface TrackingSession {
   id: string;
   booking_id: string;
@@ -28,13 +27,37 @@ export interface TrackingSession {
   ended_at?: string | null;
 }
 
-/**
- * 🚚 Tracking API
- */
+/* ---------------- Tracking API ---------------- */
+
 export class TrackingAPI {
+  /* ---------------- Session Methods ---------------- */
+
   /**
-   * ✅ Create a new tracking session
-   * SAFETY: prevents duplicate active sessions per booking
+   * Fetch a tracking session by bookingId
+   * Returns the latest active session if multiple exist
+   */
+  static async getSessionByBookingId(
+    bookingId: string
+  ): Promise<TrackingSession | null> {
+    const { data, error } = await supabase
+      .from("tracking_sessions")
+      .select("*")
+      .eq("booking_id", bookingId)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error fetching session by bookingId:", error);
+      return null;
+    }
+
+    return (data as TrackingSession) ?? null;
+  }
+
+  /**
+   * Create a new session for a bookingId
+   * Returns existing active session if it exists
    */
   static async createSession(
     bookingId: string,
@@ -42,10 +65,9 @@ export class TrackingAPI {
     driverName?: string,
     driverPhone?: string
   ): Promise<TrackingSession> {
-    const existing = await TrackingAPI.getSessionByBookingId(bookingId);
-    if (existing && existing.status === "active") {
-      return existing;
-    }
+    const existing = await this.getSessionByBookingId(bookingId);
+
+    if (existing && existing.status === "active") return existing;
 
     const { data, error } = await supabase
       .from("tracking_sessions")
@@ -60,73 +82,33 @@ export class TrackingAPI {
       .select("*")
       .single();
 
-    if (error) {
-      throw new Error(`Create session failed: ${error.message}`);
-    }
+    if (error) throw new Error(`Failed to create session: ${error.message}`);
 
     return data as TrackingSession;
   }
 
   /**
-   * ✅ Fetch session by ID
-   */
-  static async getSession(sessionId: string): Promise<TrackingSession | null> {
-    const { data, error } = await supabase
-      .from("tracking_sessions")
-      .select("*")
-      .eq("id", sessionId)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error fetching session:", sessionId, error);
-      return null;
-    }
-
-    return (data as TrackingSession) ?? null;
-  }
-
-  /**
-   * ✅ Update session status
+   * Update session status
    */
   static async updateSessionStatus(
     sessionId: string,
     status: "active" | "paused" | "completed"
-  ): Promise<void> {
-    const updateData: any = { status };
-
-    if (status === "completed") {
-      updateData.ended_at = new Date().toISOString();
-    }
+  ) {
+    const update: any = { status };
+    if (status === "completed") update.ended_at = new Date().toISOString();
 
     const { error } = await supabase
       .from("tracking_sessions")
-      .update(updateData)
+      .update(update)
       .eq("id", sessionId);
 
-    if (error) {
-      throw new Error(`Failed to update session: ${error.message}`);
-    }
+    if (error) throw new Error(`Failed to update session status: ${error.message}`);
   }
 
-  /**
-   * ✅ Save GPS location
-   * SAFETY: non-fatal failure handling
-   */
-  static async saveLocation(location: Location): Promise<boolean> {
-    const { error } = await supabase
-      .from("tracking_locations")
-      .insert(location);
-
-    if (error) {
-      console.error("Save location failed:", error);
-      return false;
-    }
-
-    return true;
-  }
+  /* ---------------- Location Methods ---------------- */
 
   /**
-   * ✅ Fetch all locations (bounded for performance)
+   * Get all locations for a session (safe limit 2000)
    */
   static async getLocations(sessionId: string): Promise<Location[]> {
     const { data, error } = await supabase
@@ -134,7 +116,7 @@ export class TrackingAPI {
       .select("*")
       .eq("session_id", sessionId)
       .order("recorded_at", { ascending: true })
-      .limit(2000); // HARD SAFETY LIMIT
+      .limit(2000);
 
     if (error) {
       console.error("Error fetching locations:", error);
@@ -145,11 +127,45 @@ export class TrackingAPI {
   }
 
   /**
-   * ✅ Fetch latest location
+   * Subscribe to real-time location updates
    */
-  static async getLatestLocation(
-    sessionId: string
-  ): Promise<Location | null> {
+  static subscribeToLocationUpdates(
+    sessionId: string,
+    callback: (location: Location) => void
+  ) {
+    const channel = supabase
+      .channel(`tracking_${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "tracking_locations",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        (payload) => callback(payload.new as Location)
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }
+
+  /**
+   * Save a location
+   */
+  static async saveLocation(location: Location): Promise<boolean> {
+    const { error } = await supabase.from("tracking_locations").insert(location);
+    if (error) {
+      console.error("Save location failed:", error);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Get latest location for a session
+   */
+  static async getLatestLocation(sessionId: string): Promise<Location | null> {
     const { data, error } = await supabase
       .from("tracking_locations")
       .select("*")
@@ -166,82 +182,24 @@ export class TrackingAPI {
     return (data as Location) ?? null;
   }
 
-  /**
-   * ✅ Fetch session by booking ID
-   * SAFETY: uses started_at (guaranteed column)
-   */
-  static async getSessionByBookingId(
-    bookingId: string
-  ): Promise<TrackingSession | null> {
-    const { data, error } = await supabase
-      .from("tracking_sessions")
-      .select("*")
-      .eq("booking_id", bookingId)
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      console.error("Error fetching session by booking:", error);
-      return null;
-    }
-
-    return (data as TrackingSession) ?? null;
-  }
+  /* ---------------- GPS Helpers ---------------- */
 
   /**
-   * ✅ Subscribe to real-time location updates
-   */
-  static subscribeToLocationUpdates(
-    sessionId: string,
-    callback: (location: Location) => void
-  ) {
-    const channel = supabase
-      .channel(`tracking_${sessionId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "tracking_locations",
-          filter: `session_id=eq.${sessionId}`,
-        },
-        (payload) => {
-          callback(payload.new as Location);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }
-
-  /**
-   * ✅ One-time GPS position
+   * One-time GPS position
    */
   static async getCurrentGPSPosition(): Promise<GeolocationPosition | null> {
     return new Promise((resolve, reject) => {
-      if (!("geolocation" in navigator)) {
-        reject(new Error("Geolocation not supported."));
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(pos),
-        (err) => reject(err),
-        {
-          enableHighAccuracy: true,
-          timeout: 20000,
-          maximumAge: 0,
-        }
-      );
+      if (!("geolocation" in navigator)) return reject(new Error("Geolocation not supported"));
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0,
+      });
     });
   }
 
   /**
-   * ✅ Continuous GPS tracking
-   * SAFETY: resilient against network errors
+   * Start continuous GPS tracking
    */
   static startGPSWatch(
     sessionId: string,
@@ -249,68 +207,52 @@ export class TrackingAPI {
     onError?: (error: GeolocationPositionError) => void
   ): number | null {
     if (!("geolocation" in navigator)) {
-      console.warn("Geolocation unavailable.");
+      console.warn("Geolocation unavailable");
       return null;
     }
 
     const watchId = navigator.geolocation.watchPosition(
       async (pos) => {
         try {
-          const batteryLevel = await TrackingAPI.getBatteryLevel();
+          const battery = await this.getBatteryLevel();
 
-          const location: Location = {
+          const loc: Location = {
             session_id: sessionId,
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy,
             speed: pos.coords.speed ?? 0,
             recorded_at: new Date().toISOString(),
-            battery_level: batteryLevel ?? undefined,
+            battery_level: battery ?? undefined,
           };
 
-          const saved = await TrackingAPI.saveLocation(location);
-          if (saved) {
-            onPosition(location);
-          }
+          const saved = await this.saveLocation(loc);
+          if (saved) onPosition(loc);
         } catch (err) {
-          console.error("GPS tracking error:", err);
+          console.error("GPS watch error:", err);
         }
       },
       (err) => {
         console.error("GPS watch error:", err);
         onError?.(err);
       },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 20000,
-      }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
     );
 
     return watchId;
   }
 
-  /**
-   * ✅ Stop GPS watch
-   */
   static stopGPSWatch(watchId: number | null) {
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
-    }
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   }
 
-  /**
-   * 🔋 Battery level (safe)
-   */
   private static async getBatteryLevel(): Promise<number | null> {
     try {
       if ("getBattery" in navigator) {
         const battery: any = await (navigator as any).getBattery();
         return Math.round(battery.level * 100);
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
     return null;
   }
 }

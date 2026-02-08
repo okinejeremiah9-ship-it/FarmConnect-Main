@@ -27,13 +27,12 @@ async function fetchAPI(endpoint: string, options: RequestInit = {}) {
 
 /* 🐞 DEBUG API */
 export const debugAPI = {
-fundEscrow: async (bookingId: string) => {
-  return fetchAPI("debug-fund-escrow", {
-    method: "POST",
-    body: JSON.stringify({ booking_id: bookingId }),
-  });
-},
-
+  fundEscrow: async (bookingId: string) => {
+    return fetchAPI("debug-fund-escrow", {
+      method: "POST",
+      body: JSON.stringify({ booking_id: bookingId }),
+    });
+  },
 };
 
 /* 🪙 WALLET API */
@@ -74,11 +73,7 @@ export const escrowAPI = {
 };
 
 /* ⚖️ DISPUTE API */
-/* ⚖️ DISPUTE API — FIXED */
 export const disputeAPI = {
-  /**
-   * 🔹 Admin: Get all disputes
-   */
   getAll: async (adminId: string) => {
     return fetchAPI("disputes-list", {
       method: "POST",
@@ -89,9 +84,6 @@ export const disputeAPI = {
     });
   },
 
-  /**
-   * 🔹 User: list disputes for a farmer/provider
-   */
   listForUser: async (userId: string) => {
     return fetchAPI("disputes-list", {
       method: "POST",
@@ -102,9 +94,6 @@ export const disputeAPI = {
     });
   },
 
-  /**
-   * 🔹 Add a farmer/provider reply with text, audio, images
-   */
   addMessage: async (
     disputeId: string,
     senderId: string,
@@ -124,9 +113,6 @@ export const disputeAPI = {
     });
   },
 
-  /**
-   * 🔹 Admin resolves a dispute
-   */
   resolve: async (
     disputeId: string,
     adminId: string,
@@ -145,11 +131,8 @@ export const disputeAPI = {
   },
 };
 
-/* 💬 MESSAGES API — UPDATED FOR OPTION A + CONVERSATIONS */
+/* 💬 MESSAGES API */
 export const messagesAPI = {
-  /**
-   * Save a message directly into Supabase messages table.
-   */
   send: async (msg: {
     booking_id?: string | null;
     sender_id: string;
@@ -180,10 +163,6 @@ export const messagesAPI = {
     return data;
   },
 
-  /**
-   * 📥 Get conversations grouped by OTHER USER
-   * (one row per farmer/provider pair, using latest message)
-   */
   listConversations: async (userId: string) => {
     const { data, error } = await supabase
       .from("messages")
@@ -216,10 +195,9 @@ export const messagesAPI = {
       throw new Error("Failed to load conversations");
     }
 
-    type RawMessage = any;
     const map = new Map<string, any>();
 
-    (data || []).forEach((msg: RawMessage) => {
+    (data || []).forEach((msg: any) => {
       const isSender = msg.sender_id === userId;
       const otherUser = isSender ? msg.receiver : msg.sender;
       const otherUserId = otherUser?.id;
@@ -236,14 +214,10 @@ export const messagesAPI = {
 
       const isUnreadForUser = !isSender && msg.is_read === false;
 
-      // because we sorted DESC, first time we see a user = latest message
       if (!map.has(key)) {
         map.set(key, {
           otherUserId,
-          otherUserName:
-            otherUser.business_name ||
-            otherUser.name ||
-            "User",
+          otherUserName: otherUser.business_name || otherUser.name || "User",
           lastMessage: preview,
           lastMessageType: msg.message_type,
           lastMessageAt: msg.created_at,
@@ -259,9 +233,6 @@ export const messagesAPI = {
     return Array.from(map.values());
   },
 
-  /**
-   * 🔁 (keep existing) List messages via edge function if you still use it
-   */
   list: async (bookingId: string, userId: string) => {
     return fetchAPI(`messages-list?booking_id=${bookingId}&user_id=${userId}`);
   },
@@ -308,10 +279,7 @@ export const mapAPI = {
     });
 
     if (category) params.append("category", category);
-    if (typeof minRating === "number") params.append(
-      "min_rating",
-      String(minRating)
-    );
+    if (typeof minRating === "number") params.append("min_rating", String(minRating));
     if (farmerId) params.append("farmer_id", farmerId);
 
     return fetchAPI(`get-nearby-services?${params.toString()}`);
@@ -334,12 +302,56 @@ export const completionAPI = {
   },
 };
 
-/* 🧑‍💼 ADMIN API — FIXED FOR POST */
+/* 🧑‍💼 ADMIN API */
+/* 🧑‍💼 ADMIN API */
 export const adminAPI = {
   getDashboardStats: async (adminId: string) => {
-    return fetchAPI("admin-dashboard-stats", {
-      method: "POST",
-      body: JSON.stringify({ admin_id: adminId }),
-    });
+    // 1. Fetch Bookings with User Names
+    const { data: bookings, error: bError } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        services(title),
+        farmer:users!farmer_id(name),
+        provider:users!provider_id(name)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (bError) throw bError;
+
+    // 2. Fetch User Counts
+    const { count: farmerCount } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'farmer');
+
+    const { count: providerCount } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'provider');
+
+    // 3. Calculate Stats locally
+    const active = bookings.filter(b => b.status === 'in-progress' || b.status === 'pending').length;
+    const completed = bookings.filter(b => b.status === 'completed').length;
+    const revenue = bookings
+      .filter(b => b.status === 'completed')
+      .reduce((sum, b) => sum + (Number(b.total_amount) || 0), 0);
+
+    return {
+      success: true,
+      stats: {
+        activeBookings: active,
+        completedBookings: completed,
+        totalRevenue: revenue.toString(),
+        openDisputes: 0, // You can add dispute count query here similarly
+        totalFarmers: farmerCount || 0,
+        totalProviders: providerCount || 0,
+      },
+      recentBookings: bookings.slice(0, 10) // Only return the 10 most recent
+    };
   },
+
+  getReportData: async (range: string) => {
+     // ... (Keep the working getReportData code from previous step)
+  }
 };

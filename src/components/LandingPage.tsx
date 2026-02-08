@@ -31,7 +31,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="flex flex-col min-h-screen bg-white">
       {/* =======================
           TOP NAVBAR
       ======================== */}
@@ -43,13 +43,13 @@ const LandingPage: React.FC<LandingPageProps> = ({
             className="flex items-center space-x-2 cursor-pointer"
           >
             <Tractor className="h-8 w-8 text-green-600" />
-            <span className="text-xl font-bold text-gray-900">
+            <span className="text-xl sm:text-2xl font-bold text-gray-900">
               FarmConnect
             </span>
           </button>
 
           {/* Desktop nav */}
-          <nav className="hidden md:flex items-center space-x-8 text-sm font-medium">
+          <nav className="hidden md:flex items-center space-x-4 lg:space-x-8 text-sm sm:text-base font-medium">
             <button
               onClick={scrollToTop}
               className="text-gray-700 hover:text-green-600"
@@ -75,10 +75,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
               Sign Up
             </button>
 
-            <button
-              onClick={onLogin}
-              className="px-4 py-2 rounded-full bg-green-600 text-white hover:bg-green-700 transition"
-            >
+            <button className="px-3 sm:px-4 py-1 sm:py-2 rounded-full bg-green-600 text-white hover:bg-green-700 transition" onClick={onLogin}>
               Login
             </button>
 
@@ -96,24 +93,22 @@ const LandingPage: React.FC<LandingPageProps> = ({
           HERO SECTION
       ======================== */}
       <main className="flex-1">
-        <section className="text-center py-20 md:py-28 bg-gradient-to-br from-green-50 via-white to-blue-50">
-          <div className="max-w-4xl mx-auto px-4">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight">
+        <section className="text-center py-16 sm:py-20 md:py-28 bg-gradient-to-br from-green-50 via-white to-blue-50 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-snug">
               Smart Farming,
-              <span className="block text-green-600 mt-1">
-                Trusted Services
-              </span>
+              <span className="block text-green-600 mt-1">Trusted Services</span>
             </h1>
 
-            <p className="mt-6 text-lg md:text-xl text-gray-700 max-w-2xl mx-auto">
+            <p className="mt-4 sm:mt-6 text-base sm:text-lg md:text-xl text-gray-700 max-w-2xl mx-auto">
               Connect with reliable service providers for GPS-tracked equipment
               rentals with secure escrow payments. Farm smarter, not harder.
             </p>
 
-            <div className="mt-10 flex flex-col sm:flex-row justify-center gap-4">
+            <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row justify-center gap-4">
               <button
                 onClick={onSignupFarmer}
-                className="inline-flex items-center justify-center bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 shadow-md shadow-green-200 transition"
+                className="inline-flex items-center justify-center bg-green-600 text-white px-6 sm:px-8 py-3 sm:py-3 rounded-lg font-semibold hover:bg-green-700 shadow-md shadow-green-200 transition"
               >
                 Sign Up as Farmer
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -121,7 +116,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
               <button
                 onClick={onSignupProvider}
-                className="inline-flex items-center justify-center bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 shadow-md shadow-blue-200 transition"
+                className="inline-flex items-center justify-center bg-blue-600 text-white px-6 sm:px-8 py-3 sm:py-3 rounded-lg font-semibold hover:bg-blue-700 shadow-md shadow-blue-200 transition"
               >
                 Sign Up as Provider
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -133,18 +128,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
         {/* =======================
             CHALLENGE & SOLUTION
         ======================== */}
-        <section className="max-w-6xl mx-auto py-16 md:py-20 px-4 grid md:grid-cols-2 gap-12 md:gap-16">
+        <section className="max-w-6xl mx-auto py-12 sm:py-16 md:py-20 px-4 sm:px-6 grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 md:gap-16">
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
               The Challenge Farmers Face
             </h2>
-            <p className="mt-4 text-gray-700 leading-relaxed">
+            <p className="mt-3 sm:mt-4 text-gray-700 leading-relaxed text-base sm:text-lg">
               Finding reliable equipment and services is time-consuming and
               risky. Traditional arrangements lack transparency, proper
               tracking, and secure payment protection.
             </p>
 
-            <ul className="mt-6 space-y-3 text-gray-700">
+            <ul className="mt-4 sm:mt-6 space-y-2 text-gray-700 text-base sm:text-lg">
               <li>• Unreliable service providers and equipment</li>
               <li>• No tracking or transparency in operations</li>
               <li>• Payment disputes and financial risks</li>
@@ -152,16 +147,16 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
 
           <div>
-            <h2 className="text-3xl font-bold text-gray-900">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
               Our <span className="text-green-600">Smart Solution</span>
             </h2>
-            <p className="mt-4 text-gray-700 leading-relaxed">
+            <p className="mt-3 sm:mt-4 text-gray-700 leading-relaxed text-base sm:text-lg">
               FarmConnect bridges the gap with verified service providers,
               real-time GPS tracking, and secure escrow payments that protect
               both parties.
             </p>
 
-            <ul className="mt-6 space-y-3 text-gray-700">
+            <ul className="mt-4 sm:mt-6 space-y-2 text-gray-700 text-base sm:text-lg">
               <li>✔ Verified, professional service providers</li>
               <li>✔ Real-time GPS tracking and monitoring</li>
               <li>✔ Secure escrow payments and dispute resolution</li>
@@ -172,54 +167,45 @@ const LandingPage: React.FC<LandingPageProps> = ({
         {/* =======================
             TRUST & FEATURES
         ======================== */}
-        <section
-          id="how-it-works"
-          className="bg-gray-50 py-16 md:py-20 px-4"
-        >
+        <section id="how-it-works" className="bg-gray-50 py-12 sm:py-16 md:py-20 px-4 sm:px-6">
           <div className="max-w-5xl mx-auto text-center">
-            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900">
               Built for Trust &amp; Transparency
             </h2>
-            <p className="mt-4 text-gray-600 max-w-2xl mx-auto">
+            <p className="mt-3 sm:mt-4 text-gray-600 text-base sm:text-lg max-w-2xl mx-auto">
               Every transaction is protected by our comprehensive security and
               tracking system.
             </p>
 
-            <div className="mt-10 grid md:grid-cols-3 gap-6">
-              <div className="bg-white rounded-2xl shadow-md p-6">
-                <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+            <div className="mt-8 sm:mt-10 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 md:gap-6">
+              <div className="bg-white rounded-2xl shadow-md p-4 sm:p-6">
+                <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-2 sm:mb-4">
                   <span className="text-blue-500 text-xl">📍</span>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2">
-                  GPS Tracking
-                </h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="font-semibold text-gray-900 mb-1 sm:mb-2">GPS Tracking</h3>
+                <p className="text-sm sm:text-base text-gray-600">
                   Real-time location monitoring ensures equipment is being used
                   properly and efficiently on your farm.
                 </p>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-md p-6">
-                <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
+              <div className="bg-white rounded-2xl shadow-md p-4 sm:p-6">
+                <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-2 sm:mb-4">
                   <span className="text-green-500 text-xl">🛡️</span>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2">
-                  Escrow Protection
-                </h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="font-semibold text-gray-900 mb-1 sm:mb-2">Escrow Protection</h3>
+                <p className="text-sm sm:text-base text-gray-600">
                   Your payments are held securely until services are completed
                   to your satisfaction. No payment risks.
                 </p>
               </div>
 
-              <div className="bg-white rounded-2xl shadow-md p-6">
-                <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
+              <div className="bg-white rounded-2xl shadow-md p-4 sm:p-6">
+                <div className="w-12 h-12 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-2 sm:mb-4">
                   <span className="text-purple-500 text-xl">🤝</span>
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2">
-                  Dispute Resolution
-                </h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="font-semibold text-gray-900 mb-1 sm:mb-2">Dispute Resolution</h3>
+                <p className="text-sm sm:text-base text-gray-600">
                   Fair and fast resolution process with expert mediators to
                   handle any service disagreements.
                 </p>
@@ -231,12 +217,12 @@ const LandingPage: React.FC<LandingPageProps> = ({
         {/* =======================
             FINAL CTA SECTION
         ======================== */}
-        <section className="py-16 md:py-20 bg-gradient-to-r from-green-500 to-blue-500 text-white text-center px-4">
+        <section className="py-12 sm:py-16 md:py-20 bg-gradient-to-r from-green-500 to-blue-500 text-white text-center px-4 sm:px-6">
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-2 sm:mb-4">
               Ready to Transform Your Farming Operations?
             </h2>
-            <p className="text-lg text-green-50 mb-8">
+            <p className="text-base sm:text-lg md:text-xl text-green-50 mb-6 sm:mb-8">
               Join thousands of farmers and service providers who trust
               FarmConnect for secure, efficient agricultural services.
             </p>
@@ -244,7 +230,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
             <div className="flex flex-col sm:flex-row justify-center gap-4">
               <button
                 onClick={onSignupFarmer}
-                className="inline-flex items-center justify-center px-8 py-3 rounded-lg bg-white text-green-700 font-semibold hover:bg-green-50 transition"
+                className="inline-flex items-center justify-center px-6 sm:px-8 py-3 sm:py-3 rounded-lg bg-white text-green-700 font-semibold hover:bg-green-50 transition"
               >
                 Get Started as Farmer
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -252,7 +238,7 @@ const LandingPage: React.FC<LandingPageProps> = ({
 
               <button
                 onClick={onSignupProvider}
-                className="inline-flex items-center justify-center px-8 py-3 rounded-lg border border-white/80 text-white font-semibold hover:bg-white/10 transition"
+                className="inline-flex items-center justify-center px-6 sm:px-8 py-3 sm:py-3 rounded-lg border border-white/80 text-white font-semibold hover:bg-white/10 transition"
               >
                 Become a Provider
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -265,21 +251,18 @@ const LandingPage: React.FC<LandingPageProps> = ({
       {/* =======================
           FOOTER
       ======================== */}
-      <footer
-        id="contact"
-        className="bg-slate-900 text-slate-100 py-10 px-4"
-      >
-        <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-8">
+      <footer className="bg-slate-900 text-slate-100 py-8 sm:py-10 px-4 sm:px-6">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 sm:gap-8">
           <div>
-            <div className="flex items-center mb-4">
+            <div className="flex items-center mb-3 sm:mb-4">
               <Tractor className="h-7 w-7 text-green-400" />
               <span className="ml-2 text-lg font-semibold">FarmConnect</span>
             </div>
-            <p className="text-sm text-slate-300">
+            <p className="text-sm sm:text-base text-slate-300">
               Connecting farmers with trusted service providers through secure,
               technology-driven agricultural solutions.
             </p>
-            <div className="mt-4 space-y-2 text-sm text-slate-300">
+            <div className="mt-3 sm:mt-4 space-y-2 text-sm sm:text-base text-slate-300">
               <div className="flex items-center space-x-2">
                 <Phone className="h-4 w-4" />
                 <span>(555) 123-FARM</span>
@@ -292,8 +275,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
 
           <div>
-            <h4 className="font-semibold mb-3">Quick Links</h4>
-            <ul className="space-y-2 text-sm text-slate-300">
+            <h4 className="font-semibold mb-2 sm:mb-3">Quick Links</h4>
+            <ul className="space-y-1 sm:space-y-2 text-sm sm:text-base text-slate-300">
               <li>
                 <button
                   onClick={() =>
@@ -307,18 +290,12 @@ const LandingPage: React.FC<LandingPageProps> = ({
                 </button>
               </li>
               <li>
-                <button
-                  onClick={onSignupFarmer}
-                  className="hover:text-white"
-                >
+                <button onClick={onSignupFarmer} className="hover:text-white">
                   For Farmers
                 </button>
               </li>
               <li>
-                <button
-                  onClick={onSignupProvider}
-                  className="hover:text-white"
-                >
+                <button onClick={onSignupProvider} className="hover:text-white">
                   For Providers
                 </button>
               </li>
@@ -331,8 +308,8 @@ const LandingPage: React.FC<LandingPageProps> = ({
           </div>
 
           <div>
-            <h4 className="font-semibold mb-3">Legal</h4>
-            <ul className="space-y-2 text-sm text-slate-300">
+            <h4 className="font-semibold mb-2 sm:mb-3">Legal</h4>
+            <ul className="space-y-1 sm:space-y-2 text-sm sm:text-base text-slate-300">
               <li>Privacy Policy</li>
               <li>Terms of Service</li>
               <li>Cookie Policy</li>

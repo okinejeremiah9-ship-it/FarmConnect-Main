@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Global default text scaling for mobile */
+html {
+  font-size: 16px; /* base font size */
+}
+
+body {
+  @apply bg-white text-gray-900 antialiased;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Optional: images and iframes scale automatically */
+img, iframe, video {
+  max-width: 100%;
+  height: auto;
+}
